@@ -1,0 +1,9 @@
+{
+  // Cloudflare Workers Static Assets: serve the whole repo root as a static site.
+  "name": "lunmont-site",
+  "compatibility_date": "2026-11-11",
+  "assets": {
+    "directory": "./",
+    "html_handling": "auto-trailing-slash"
+  }
+}
