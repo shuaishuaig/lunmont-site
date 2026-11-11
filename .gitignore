@@ -1,0 +1,15 @@
+# Synology Drive metadata
+@eaDir/
+**/@eaDir/
+
+# local-only config & internal handover docs (not needed for static deploy)
+site-config.json
+交接说明.md
+
+# backups / temp / OS junk
+*.bak
+*.prepull.bak
+.trash_conflict/
+.presync_bak/
+.DS_Store
+desktop.ini
