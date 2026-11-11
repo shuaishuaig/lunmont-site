@@ -1,5 +1,5 @@
 // LUNMONT site worker: static assets + products API backed by D1.
-// Writes (POST/DELETE) require header X-Admin-Key == env ADMIN_KEY.
+// Writes (POST/DELETE) require header X-Admin-Key matching D1 settings.admin_key.
 
 const MAX_IMAGE = 700000; // dataURL char cap, keeps request body < 1MiB
 
@@ -16,6 +16,17 @@ function json(body, status = 200) {
     status,
     headers: { 'Content-Type': 'application/json' }
   });
+}
+
+async function checkAdmin(env, request) {
+  const key = request.headers.get('X-Admin-Key') || '';
+  if (!key) return false;
+  try {
+    const r = await env.DB.prepare("SELECT value FROM settings WHERE key='admin_key'").first();
+    return !!r && r.value === key;
+  } catch (e) {
+    return false;
+  }
 }
 
 export default {
@@ -38,10 +49,8 @@ export default {
       }
     }
 
-    // everything below mutates data: require admin key
     if (method === 'POST' || method === 'DELETE') {
-      const key = request.headers.get('X-Admin-Key') || '';
-      if (!env.ADMIN_KEY || key !== env.ADMIN_KEY) return json({ error: 'unauthorized' }, 401);
+      if (!(await checkAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
     }
 
     if (route === '/products' && method === 'POST') {
