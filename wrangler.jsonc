@@ -1,7 +1,16 @@
 {
   "name": "lunmont-site",
+  "main": "worker.mjs",
   "compatibility_date": "2026-11-11",
   "assets": {
-    "directory": "./"
-  }
+    "directory": "./",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "lunmont-products",
+      "database_id": "528ca67c-1fc4-464b-a54a-0372ae2c24d8"
+    }
+  ]
 }
