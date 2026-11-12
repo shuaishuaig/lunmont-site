@@ -194,6 +194,14 @@ const DEFAULT_CONTENT = {
 };
 
 let contentReady = false;
+// 建表只需一次：D1 每次 CREATE TABLE IF NOT EXISTS 都有往返开销，
+// 不缓存会让 GET /api/styles 从 ~1s 变成 6s+。
+let stylesReady = false;
+async function ensureStyles(env) {
+  if (stylesReady) return;
+  await env.DB.prepare(STYLES_SCHEMA).run();
+  stylesReady = true;
+}
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -349,7 +357,7 @@ export default {
     if (route === '/styles' && method === 'GET') {
       // 样式必须对访客公开可读：访客加载首页就要应用，否则刷新后看不到自定义样式
       try {
-        await env.DB.prepare(STYLES_SCHEMA).run();
+        await ensureStyles(env);
         const r = await env.DB.prepare('SELECT key, css_json FROM content_styles').all();
         const styles = {};
         for (const row of (r.results || [])) {
@@ -418,14 +426,16 @@ export default {
       const clean = cleanStyles(body && body.styles);
       if (!clean) return json({ error: 'invalid styles' }, 400);
       try {
-        await env.DB.prepare(STYLES_SCHEMA).run();
-        await env.DB.prepare('DELETE FROM content_styles').run();
+        await ensureStyles(env);
         const keys = Object.keys(clean);
+        // 一条 batch 提交（DELETE + 全部 INSERT），避免逐条往返把 2 个字段拖到 13s
+        const stmts = [env.DB.prepare('DELETE FROM content_styles')];
         for (const k of keys) {
-          await env.DB.prepare(
+          stmts.push(env.DB.prepare(
             "INSERT INTO content_styles (key, css_json, updated_at) VALUES (?, ?, datetime('now'))"
-          ).bind(k, JSON.stringify(clean[k])).run();
+          ).bind(k, JSON.stringify(clean[k])));
         }
+        await env.DB.batch(stmts);
         return json({ ok: true, keys: keys.length });
       } catch (e) {
         return json({ error: 'styles save failed', detail: String(e && e.message || e).slice(0, 200) }, 500);
@@ -434,7 +444,7 @@ export default {
 
     if (route === '/styles' && method === 'DELETE') {
       try {
-        await env.DB.prepare(STYLES_SCHEMA).run();
+        await ensureStyles(env);
         await env.DB.prepare('DELETE FROM content_styles').run();
         return json({ ok: true });
       } catch (e) {
