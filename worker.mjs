@@ -4,13 +4,37 @@
 const MAX_IMAGE = 700000; // dataURL char cap, keeps request body < 1MiB
 const MAX_CONTENT_VALUE = 4000;
 
+// products：去重键 ukey 是业务主键（sku 优先，其次 名称+分类），配合唯一索引保证
+// 「同一产品反复发布只会更新、不会多出一条」。image 只是内容，绝不能拿来当判重依据
+// ——dataURL 每次压缩字节都不同，按 image 判重必然重复。
 const SCHEMA = `CREATE TABLE IF NOT EXISTS products (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   category TEXT DEFAULT '',
   image TEXT NOT NULL,
-  created_at TEXT DEFAULT (datetime('now'))
+  sku TEXT DEFAULT '',
+  ukey TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
 )`;
+const PRODUCTS_DDL = [
+  "ALTER TABLE products ADD COLUMN sku TEXT DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN ukey TEXT DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))"
+];
+const PRODUCTS_MIGRATION_KEY = 'products_v2';
+let productsReady = false;
+
+// 稳定业务键：有 sku 用 sku（产品改了名/换了图也认得出来），否则用 名称+分类。
+// 归一化必须与迁移回填共用同一个函数，否则回填出来的键和运行时算的对不上=白填。
+function productKey(p) {
+  const sku = String((p && p.sku) || '').trim().toLowerCase();
+  if (sku) return 'sku:' + sku.slice(0, 80);
+  const norm = s => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const name = norm(p && p.name).slice(0, 120);
+  const cat = norm(p && p.category).slice(0, 60);
+  return 'nm:' + name + '|' + cat;
+}
 
 const CONTENT_SCHEMA = `CREATE TABLE IF NOT EXISTS site_content (
   key TEXT PRIMARY KEY,
@@ -203,6 +227,119 @@ async function ensureStyles(env) {
   stylesReady = true;
 }
 
+// products 迁移/去重（只做一次，用 settings 里的标记位判定，避免每次冷启动都跑）。
+// 步骤：建表 → 补列 → 按 productKey 回填 ukey → 历史重复只留最新一条 → 建唯一索引。
+// 唯一索引是最后一道保险：即使两个请求并发、应用层判重被绕过，数据库也生不出第二条。
+async function ensureProducts(env) {
+  if (productsReady) return;
+  await env.DB.prepare(SETTINGS_SCHEMA).run();
+  const flag = await env.DB.prepare("SELECT value FROM settings WHERE key=?")
+    .bind(PRODUCTS_MIGRATION_KEY).first();
+  if (flag && flag.value === '1') { productsReady = true; return; }
+
+  await env.DB.prepare(SCHEMA).run();
+  for (const ddl of PRODUCTS_DDL) {
+    try { await env.DB.prepare(ddl).run(); } catch (e) { /* 列已存在：忽略 */ }
+  }
+
+  const all = await env.DB.prepare('SELECT id, name, category, sku, image, ukey FROM products').all();
+  const rows = all.results || [];
+  const backfill = [];
+  for (const p of rows) {
+    const k = productKey(p);
+    if (p.ukey !== k) backfill.push(env.DB.prepare('UPDATE products SET ukey=? WHERE id=?').bind(k, p.id));
+  }
+  if (backfill.length) await env.DB.batch(backfill);
+
+  // 历史重复（同一 ukey 多行）只保留 id 最大的一条 = 最后一次发布的内容
+  const dup = await env.DB.prepare(
+    "SELECT ukey, MAX(id) AS keep, COUNT(*) AS n FROM products WHERE ukey<>'' GROUP BY ukey HAVING COUNT(*)>1"
+  ).all();
+  const drop = [];
+  for (const g of (dup.results || [])) {
+    drop.push(env.DB.prepare("DELETE FROM products WHERE ukey=? AND id<>?").bind(g.ukey, g.keep));
+  }
+  if (drop.length) await env.DB.batch(drop);
+
+  await env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_products_ukey ON products(ukey)').run();
+  await env.DB.prepare("INSERT INTO settings (key, value) VALUES (?, '1') ON CONFLICT(key) DO UPDATE SET value='1'")
+    .bind(PRODUCTS_MIGRATION_KEY).run();
+  productsReady = true;
+}
+
+// 单条产品入参清洗：字段截断 + 图片格式/体积校验，返回 ukey 供 upsert 判重
+function cleanProduct(body) {
+  const name = String((body && body.name) || '').trim().slice(0, 120);
+  const category = String((body && body.category) || '').trim().slice(0, 60);
+  const image = String((body && body.image) || '');
+  const sku = String((body && body.sku) || '').trim().slice(0, 80);
+  if (!name) return { error: 'name required', status: 400 };
+  if (!image.startsWith('data:image/') && !/^https?:\/\//.test(image))
+    return { error: 'image must be data URL or http(s) URL', status: 400 };
+  if (image.length > MAX_IMAGE) return { error: 'image too large', status: 413 };
+  return { name, category, image, sku, ukey: productKey({ sku, name, category }) };
+}
+
+// 批量幂等写入：一次读全表判重 + 一次 DB.batch 提交，2 个往返搞定任意条数。
+// 逐条 INSERT/UPDATE 会变成几百次往返（D1 每次往返成本高），批量发布必须走这条路。
+async function upsertMany(env, items) {
+  const all = await env.DB.prepare('SELECT id, name, category, image, sku, ukey FROM products').all();
+  const cur = new Map();
+  for (const p of (all.results || [])) cur.set(p.ukey, p);
+  let created = 0, updated = 0, unchanged = 0;
+  const stmts = [];
+  for (const it of items) {
+    const ex = cur.get(it.ukey);
+    if (!ex) {
+      created++;
+      stmts.push(env.DB.prepare(
+        "INSERT INTO products (name, category, image, sku, ukey, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'))" +
+        " ON CONFLICT(ukey) DO UPDATE SET name=excluded.name, category=excluded.category," +
+        " image=excluded.image, sku=excluded.sku, updated_at=datetime('now')"
+      ).bind(it.name, it.category, it.image, it.sku, it.ukey));
+    } else if (ex.name !== it.name || (ex.category || '') !== it.category ||
+               ex.image !== it.image || (ex.sku || '') !== it.sku) {
+      updated++;
+      stmts.push(env.DB.prepare(
+        "UPDATE products SET name=?, category=?, image=?, sku=?, updated_at=datetime('now') WHERE ukey=?"
+      ).bind(it.name, it.category, it.image, it.sku, it.ukey));
+    } else unchanged++;
+  }
+  if (stmts.length) await env.DB.batch(stmts);
+  return { created, updated, unchanged };
+}
+
+// 幂等写入：同一 ukey 只会有一行。created/updated/unchanged 三态回给调用方，
+// unchanged 直接不写库（重复发布同一份内容 = 零写入、零耗时、零脏数据）。
+async function upsertProduct(env, item) {
+  const ex = await env.DB.prepare('SELECT id, name, category, image, sku FROM products WHERE ukey=?')
+    .bind(item.ukey).first();
+  if (ex) {
+    const changed = ex.name !== item.name || (ex.category || '') !== item.category ||
+      ex.image !== item.image || (ex.sku || '') !== item.sku;
+    if (changed) {
+      await env.DB.prepare(
+        "UPDATE products SET name=?, category=?, image=?, sku=?, updated_at=datetime('now') WHERE id=?"
+      ).bind(item.name, item.category, item.image, item.sku, ex.id).run();
+    }
+    return { id: ex.id, action: changed ? 'updated' : 'unchanged' };
+  }
+  try {
+    const r = await env.DB.prepare(
+      "INSERT INTO products (name, category, image, sku, ukey, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'))"
+    ).bind(item.name, item.category, item.image, item.sku, item.ukey).run();
+    return { id: r.meta && r.meta.last_row_id, action: 'created' };
+  } catch (e) {
+    // 并发下被唯一索引挡住的第二条：退化成更新，既不报错也不会多出一条
+    const again = await env.DB.prepare('SELECT id FROM products WHERE ukey=?').bind(item.ukey).first();
+    if (!again) throw e;
+    await env.DB.prepare(
+      "UPDATE products SET name=?, category=?, image=?, sku=?, updated_at=datetime('now') WHERE id=?"
+    ).bind(item.name, item.category, item.image, item.sku, again.id).run();
+    return { id: again.id, action: 'updated' };
+  }
+}
+
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -349,9 +486,26 @@ export default {
     if (route === '/products' && method === 'GET') {
       try {
         const r = await env.DB.prepare(
-          'SELECT id, name, category, image FROM products ORDER BY id DESC LIMIT 500'
+          'SELECT id, name, category, image, sku, created_at, updated_at FROM products ORDER BY id DESC LIMIT 500'
         ).all();
-        return json({ products: r.results || [] });
+        const rows = r.results || [];
+        const out = { products: rows };
+        // ?stats=1 需要 admin：给「发布对账」用，返回总行数/唯一键数与重复组，不泄露图片内容
+        if (url.searchParams.get('stats') === '1') {
+          if (!(await checkAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
+          const s = await env.DB.prepare(
+            "SELECT COUNT(*) AS rows, COUNT(DISTINCT ukey) AS keys FROM products"
+          ).first();
+          const dup = await env.DB.prepare(
+            "SELECT ukey, COUNT(*) AS n FROM products WHERE ukey<>'' GROUP BY ukey HAVING COUNT(*)>1"
+          ).all();
+          out.stats = {
+            rows: (s && s.rows) || rows.length,
+            keys: (s && s.keys) || 0,
+            dupes: (dup.results || []).length
+          };
+        }
+        return json(out);
       } catch (e) {
         return json({ products: [] });
       }
@@ -688,21 +842,47 @@ export default {
     if (route === '/products' && method === 'POST') {
       let body;
       try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
-      const name = String(body.name || '').trim().slice(0, 120);
-      const category = String(body.category || '').trim().slice(0, 60);
-      const image = String(body.image || '');
-      if (!name) return json({ error: 'name required' }, 400);
-      if (!image.startsWith('data:image/') && !/^https?:\/\//.test(image))
-        return json({ error: 'image must be data URL or http(s) URL' }, 400);
-      if (image.length > MAX_IMAGE) return json({ error: 'image too large' }, 413);
+      const item = cleanProduct(body);
+      if (item.error) return json({ error: item.error }, item.status || 400);
       try {
-        await env.DB.prepare(SCHEMA).run();
-        const r = await env.DB.prepare(
-          'INSERT INTO products (name, category, image) VALUES (?, ?, ?)'
-        ).bind(name, category, image).run();
-        return json({ ok: true, id: r.meta && r.meta.last_row_id });
+        await ensureProducts(env);
+        const r = await upsertProduct(env, item);
+        return json({ ok: true, id: r.id, action: r.action, ukey: item.ukey });
       } catch (e) {
-        return json({ error: 'save failed' }, 500);
+        return json({ error: 'save failed', detail: String(e && e.message || e).slice(0, 160) }, 500);
+      }
+    }
+
+    // 批量发布：一次最多 200 条，整体幂等。重复发布（含改名/换图）只会更新原行，
+    // 同一批里出现两次同 ukey 也只留最后一条。返回三态计数便于对账。
+    if (route === '/products/batch' && method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+      const items = Array.isArray(body && body.items) ? body.items : null;
+      if (!items) return json({ error: 'items array required' }, 400);
+      if (!items.length) return json({ error: 'items empty' }, 400);
+      if (items.length > 200) return json({ error: 'too many items (max 200)' }, 413);
+      const clean = [];
+      const errors = [];
+      items.forEach((raw, i) => {
+        const it = cleanProduct(raw);
+        if (it.error) errors.push({ index: i, error: it.error });
+        else clean.push(it);
+      });
+      if (!clean.length) return json({ error: 'no valid items', errors }, 400);
+      try {
+        await ensureProducts(env);
+        // 批内去重：同 ukey 后者覆盖前者，避免同一批里自己撞自己
+        const map = new Map();
+        for (const it of clean) map.set(it.ukey, it);
+        const r = await upsertMany(env, [...map.values()]);
+        return json({
+          ok: true, total: items.length, valid: map.size,
+          created: r.created, updated: r.updated, unchanged: r.unchanged,
+          errors
+        });
+      } catch (e) {
+        return json({ error: 'batch failed', detail: String(e && e.message || e).slice(0, 160) }, 500);
       }
     }
 
