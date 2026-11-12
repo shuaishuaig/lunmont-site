@@ -1055,11 +1055,24 @@ function rgbToHex(v){
 
 function spStyle(){ return (styleTarget && styleDraft[styleTarget]) || {}; }
 
+// 与服务端同口径归一化：数值属性一律存数字，避免 "<input>" 回传字符串导致
+// 「拖回原值仍被判成有改动」以及和 styleLive（服务端回读）类型不一致。
+const SP_NUM={fontSize:0,fontWeight:0,lineHeight:2,letterSpacing:3};
+function spNorm(p,v){
+  if(Object.prototype.hasOwnProperty.call(SP_NUM,p)){
+    const d=SP_NUM[p], n=Number(v);
+    if(!isFinite(n)) return null;
+    return d===0?Math.round(n):Number(n.toFixed(d));
+  }
+  return String(v);
+}
+
 function setStyleProp(p, v){
   if(!styleTarget) return;
   styleLoadSeq++;   // 有本地改动后，在途 loadStyles 一律作废
   const o=Object.assign({}, styleDraft[styleTarget]||{});
-  if(v===''||v===null||v===undefined) delete o[p]; else o[p]=v;
+  if(v===''||v===null||v===undefined) delete o[p];
+  else { const nv=spNorm(p,v); if(nv===null) return; o[p]=nv; }
   if(Object.keys(o).length) styleDraft[styleTarget]=o; else delete styleDraft[styleTarget];
   applyStyles(styleDraft);
   spStatus(JSON.stringify(styleDraft)===JSON.stringify(styleLive)?'样式未改动':'有未保存的样式改动','');
