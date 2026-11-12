@@ -44,7 +44,7 @@
   .hero .veil{position:absolute;inset:0;background:linear-gradient(180deg,rgba(15,14,12,.25),rgba(15,14,12,.55))}
   .hero .cap{position:absolute;left:6vw;bottom:10vh;color:#fff;max-width:640px}
   .hero .cap small{font-size:12px;letter-spacing:.5em;color:#e8ddc9}
-  .hero .cap h1{margin-top:18px;font-size:clamp(32px,5vw,58px);font-weight:600;letter-spacing:.12em;line-height:1.4;text-shadow:0 2px 24px rgba(0,0,0,.4)}
+  .hero .cap h1{margin-top:18px;font-size:clamp(32px,5vw,58px);font-weight:600;letter-spacing:.12em;line-height:1.4;text-shadow:0 2px 24px rgba(0,0,0,.4);white-space:pre-line}
   .hero .cap p{margin-top:16px;font-size:15px;letter-spacing:.06em;color:#efe9df}
   .hero .cap a{display:inline-block;margin-top:30px;padding:13px 40px;border:1px solid #fff;color:#fff;text-decoration:none;font-size:13px;letter-spacing:.3em;transition:.25s;cursor:pointer}
   .hero .cap a:hover{background:#fff;color:var(--ink)}
@@ -83,14 +83,33 @@
   .contact p{color:#b9b0a4;margin-top:18px;font-size:15px;letter-spacing:.08em}
   .contact .mail{display:inline-block;margin-top:36px;padding:13px 42px;border:1px solid #fffdf9;color:#fffdf9;text-decoration:none;font-size:13px;letter-spacing:.3em}
   footer{padding:30px 6vw;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;color:var(--muted);font-size:12px;letter-spacing:.15em}
+  .edit-on [data-content-key]{outline:1px dashed #d9a441;outline-offset:4px;cursor:text;border-radius:2px}
+  .edit-on [data-content-key]:hover{background:rgba(217,164,65,.14)}
+  .edit-on [data-content-key]:focus{outline:2px solid #d9a441;background:rgba(255,253,249,.10)}
+  body.edit-on{padding-bottom:72px}
+  .editbar{position:fixed;left:0;right:0;bottom:0;z-index:50;display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;background:#0f0e0c;color:#fffdf9;padding:12px 6vw;font-size:13px;letter-spacing:.08em}
+  .editbar[hidden]{display:none}
+  .editbar button{padding:8px 20px;border:1px solid #d9a441;background:#d9a441;color:#0f0e0c;font-size:13px;letter-spacing:.12em;cursor:pointer}
+  .editbar button.ghost{background:transparent;color:#e8ddc9;border-color:#8a7a60}
+  .editbar button:disabled{opacity:.5;cursor:wait}
+  .editbar .st{color:#c9b98f;min-width:110px}
+  .editbar .st.ok{color:#8fd6a0}.editbar .st.err{color:#f0a0a0}
+  .seo-edit{margin-top:34px;padding-top:24px;border-top:1px solid var(--line);max-width:900px}
+  .seo-edit h3{font-size:15px;letter-spacing:.15em;margin-bottom:12px}
 </style>
 </head>
 <body>
+<div class="editbar sans" id="editBar" hidden>
+  <span>可视化编辑中：直接点页面文字修改</span>
+  <button type="button" id="saveContent">保存文案</button>
+  <button type="button" class="ghost" id="resetContent">放弃修改</button>
+  <span class="st" id="contentStatus"></span>
+</div>
 <nav>
-  <div class="logo">LUNMONT</div>
+  <div class="logo" data-content-key="nav_brand">LUNMONT</div>
   <div class="links sans">
-    <a href="#products">产品展示</a>
-    <a href="#contact">联系我们</a>
+    <a href="#products" data-content-key="nav_products">产品展示</a>
+    <a href="#contact" data-content-key="nav_contact">联系我们</a>
     <a id="editToggle">管理模式</a>
   </div>
 </nav>
@@ -99,33 +118,34 @@
   <img src="assets/products/accessories/DU2101.jpg" alt="LUNMONT hair accessories">
   <div class="veil"></div>
   <div class="cap">
-    <small class="sans">HAIR ACCESSORIES · WHOLESALE</small>
-    <h1>以细节见质感的<br>发夹与饰品批发</h1>
-    <p class="sans">LUNMONT（义乌市玥岑进出口有限公司）· 支持小批量起订与出口订单</p>
-    <a class="sans" href="#contact">获取产品目录</a>
+    <small class="sans" data-content-key="hero_kicker">HAIR ACCESSORIES · WHOLESALE</small>
+    <h1 data-content-key="hero_title">以细节见质感的
+发夹与饰品批发</h1>
+    <p class="sans" data-content-key="hero_sub">LUNMONT（义乌市玥岑进出口有限公司）· 支持小批量起订与出口订单</p>
+    <a class="sans" href="#contact" data-content-key="hero_cta">获取产品目录</a>
   </div>
 </div>
 
 <div class="stats sans">
-  <div><b id="statCount">—</b><i>展示产品</i></div>
-  <div><b>小批量</b><i>灵活起订</i></div>
-  <div><b>出口</b><i>进出口直营</i></div>
+  <div><b id="statCount">—</b><i data-content-key="stat1_label">展示产品</i></div>
+  <div><b data-content-key="stat2_num">小批量</b><i data-content-key="stat2_label">灵活起订</i></div>
+  <div><b data-content-key="stat3_num">出口</b><i data-content-key="stat3_label">进出口直营</i></div>
 </div>
 
 <section id="products">
   <div class="sec-head">
-    <small class="sans">COLLECTIONS</small>
-    <h2>产品系列</h2>
+    <small class="sans" data-content-key="products_kicker">COLLECTIONS</small>
+    <h2 data-content-key="products_title">产品系列</h2>
   </div>
   <div class="loading sans" id="loading">正在加载产品…</div>
-  <div class="empty sans" id="empty" style="display:none">暂无产品。进入「管理模式」上传你的产品图片即可自动生成卡片。</div>
+  <div class="empty sans" id="empty" style="display:none" data-content-key="empty_text">暂无产品。进入「管理模式」上传你的产品图片即可自动生成卡片。</div>
   <div class="error sans" id="error" style="display:none">产品加载失败，请刷新重试。</div>
   <div class="grid" id="grid"></div>
 </section>
 
 <section class="admin">
-  <h2>上传产品图片</h2>
-  <div class="hint sans">选择图片后自动压缩并生成产品卡片，可多选一次上传多张。产品名选填，分类决定卡片归类。</div>
+  <h2 data-content-key="admin_title">上传产品图片</h2>
+  <div class="hint sans" data-content-key="admin_hint">选择图片后自动压缩并生成产品卡片，可多选一次上传多张。产品名选填，分类决定卡片归类。</div>
   <div class="form sans">
     <div><label>图片（可多选）</label><input type="file" id="files" accept="image/*" multiple></div>
     <div><label>产品名（选填，留空用文件名）</label><input type="text" id="pname" placeholder="如：珍珠抓夹-米白"></div>
@@ -136,18 +156,25 @@
     <div><button class="btn" id="uploadBtn">上传生成</button></div>
   </div>
   <div class="status sans" id="status"></div>
+  <div class="seo-edit sans">
+    <h3>网页标题与描述（SEO，不在页面上显示）</h3>
+    <div class="form">
+      <div><label>网页标题 title</label><input type="text" id="seoTitle" placeholder="浏览器标签页标题"></div>
+      <div><label>网页描述 description</label><input type="text" id="seoDesc" placeholder="搜索引擎摘要"></div>
+    </div>
+  </div>
 </section>
 
 <section id="contact" class="contact">
-  <small class="sans" style="letter-spacing:.5em;color:#9a7b4f">CONTACT</small>
-  <h2 style="margin-top:14px">欢迎来样订制与批发合作</h2>
-  <p class="sans">义乌市玥岑进出口有限公司 · 浙江义乌</p>
-  <a class="mail sans" href="mailto:info@lunmont.asia">info@lunmont.asia</a>
+  <small class="sans" style="letter-spacing:.5em;color:#9a7b4f" data-content-key="contact_kicker">CONTACT</small>
+  <h2 style="margin-top:14px" data-content-key="contact_title">欢迎来样订制与批发合作</h2>
+  <p class="sans" data-content-key="contact_sub">义乌市玥岑进出口有限公司 · 浙江义乌</p>
+  <a class="mail sans" href="mailto:info@lunmont.asia" data-content-key="contact_email">info@lunmont.asia</a>
 </section>
 
 <footer class="sans">
-  <div>© 2026 LUNMONT · 义乌市玥岑进出口有限公司</div>
-  <div>HAIR ACCESSORIES WHOLESALE</div>
+  <div data-content-key="footer_left">© 2026 LUNMONT · 义乌市玥岑进出口有限公司</div>
+  <div data-content-key="footer_right">HAIR ACCESSORIES WHOLESALE</div>
 </footer>
 
 <script>
@@ -168,6 +195,107 @@ async function api(path, opts={}) {
 }
 
 function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
+
+/* ---- 整页文案可视化编辑：contenteditable + D1 /api/content ---- */
+function contentNodes(){ return Array.prototype.slice.call(document.querySelectorAll('[data-content-key]')); }
+let contentCache = {}, contentBaseline = null;
+
+function applyContent(map){
+  if(!map || typeof map !== 'object') return;
+  contentNodes().forEach(el=>{
+    const k = el.dataset.contentKey;
+    if(Object.prototype.hasOwnProperty.call(map,k)) el.textContent = map[k];
+  });
+  if(Object.prototype.hasOwnProperty.call(map,'seo_title')){
+    document.title = map.seo_title;
+    $('#seoTitle').value = map.seo_title;
+    const og = document.querySelector('meta[property="og:title"]');
+    if(og) og.content = map.seo_title;
+  }
+  if(Object.prototype.hasOwnProperty.call(map,'seo_desc')){
+    const m = document.querySelector('meta[name="description"]');
+    if(m) m.content = map.seo_desc;
+    $('#seoDesc').value = map.seo_desc;
+    const og = document.querySelector('meta[property="og:description"]');
+    if(og) og.content = map.seo_desc;
+  }
+  const mail = $('[data-content-key="contact_email"]');
+  if(mail) mail.href = 'mailto:' + (mail.textContent||'').trim();
+}
+
+function snapshotContent(){
+  const c = {};
+  contentNodes().forEach(el=>{
+    const t = (el.innerText || el.textContent || '').replace(/\r/g,'').trim();
+    c[el.dataset.contentKey] = t;
+  });
+  c.seo_title = document.title;
+  const m = document.querySelector('meta[name="description"]');
+  c.seo_desc = m ? m.content : '';
+  return c;
+}
+
+async function loadContent(){
+  try{
+    const r = await fetch('/api/content',{credentials:'same-origin'});
+    if(!r.ok) return false;
+    const d = await r.json();
+    if(d.content && Object.keys(d.content).length){
+      contentCache = d.content;
+      applyContent(contentCache);
+      return true;
+    }
+  }catch(e){}
+  return false;
+}
+
+function primeSeo(){
+  if(!$('#seoTitle').value) $('#seoTitle').value = document.title;
+  if(!$('#seoDesc').value){
+    const m = document.querySelector('meta[name="description"]');
+    $('#seoDesc').value = m ? m.content : '';
+  }
+}
+
+function setContentStatus(t, cls){
+  const s = $('#contentStatus');
+  s.textContent = t; s.className = 'st ' + (cls||'');
+}
+
+function setEditable(on){
+  contentNodes().forEach(el=>{
+    if(on){ el.setAttribute('contenteditable','true'); el.setAttribute('spellcheck','false'); }
+    else { el.removeAttribute('contenteditable'); el.removeAttribute('spellcheck'); }
+  });
+}
+
+async function saveContent(){
+  const content = snapshotContent();
+  content.seo_title = $('#seoTitle').value.trim() || content.seo_title;
+  content.seo_desc  = $('#seoDesc').value.trim() || content.seo_desc;
+  const btn = $('#saveContent'); btn.disabled = true;
+  setContentStatus('正在保存…');
+  try{
+    const r = await api('/content',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({content})});
+    if(r.status === 401){ setContentStatus('管理密钥错误，请退出管理模式重新输入','err'); return; }
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.detail || d.error || r.status);
+    contentCache = content; contentBaseline = content;
+    applyContent(contentCache);
+    setContentStatus('已保存，访客刷新即可看到新文案','ok');
+  }catch(e){ setContentStatus('保存失败：' + String(e.message||e).slice(0,60),'err'); }
+  finally{ btn.disabled = false; }
+}
+
+$('#saveContent').onclick = saveContent;
+$('#resetContent').onclick = ()=>{
+  applyContent(contentBaseline || contentCache || snapshotContent());
+  setContentStatus('已放弃未保存的修改');
+};
+document.addEventListener('click', e=>{
+  if(editMode && e.target.closest && e.target.closest('[data-content-key]')) e.preventDefault();
+}, true);
 
 function render(items) {
   $('#loading').style.display='none';
@@ -233,7 +361,7 @@ $('#uploadBtn').onclick = async ()=>{
   if(ok) load();
 };
 
-$('#editToggle').onclick=()=>{
+$('#editToggle').onclick=async()=>{
   if(!editMode){
     if(!adminKey()){
       const k = prompt('请输入管理密钥：');
@@ -248,10 +376,22 @@ $('#editToggle').onclick=()=>{
     $('#editToggle').textContent='管理模式';
   }
   document.body.classList.toggle('edit-on', editMode);
+  $('#editBar').hidden = !editMode;
+  setEditable(editMode);
+  if(editMode){
+    primeSeo();
+    await loadContent();
+    contentBaseline = snapshotContent();
+    setContentStatus('点页面文字直接改，改完点「保存文案」');
+  } else {
+    if(contentBaseline) applyContent(contentBaseline);
+    setContentStatus('');
+  }
   load();
 };
 
 load();
+loadContent();
 </script>
 </body>
 </html>
