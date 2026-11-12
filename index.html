@@ -96,14 +96,53 @@
   .editbar .st.ok{color:#8fd6a0}.editbar .st.err{color:#f0a0a0}
   .seo-edit{margin-top:34px;padding-top:24px;border-top:1px solid var(--line);max-width:900px}
   .seo-edit h3{font-size:15px;letter-spacing:.15em;margin-bottom:12px}
+  .editbar button.active{background:#fffdf9;color:#0f0e0c;border-color:#fffdf9}
+  .editbar button:disabled{opacity:.4}
+  .pick-on [data-content-key]{cursor:pointer;outline:1px dashed rgba(55,138,221,.6);outline-offset:3px}
+  .pick-on [data-content-key]:hover{outline:2px solid #378add;background:rgba(55,138,221,.10)}
+  .pick-on [data-content-key].marked{outline:2px solid #d85a30;background:rgba(216,90,48,.14)}
+  .pick-on [data-content-key].ai-preview{outline:2px dashed #1d9e75;background:rgba(29,158,117,.14)}
+  .markpanel{position:fixed;right:18px;bottom:76px;z-index:51;width:360px;max-width:calc(100vw - 36px);max-height:64vh;overflow:auto;background:#fffdf9;border:1px solid #cfc6b8;box-shadow:0 8px 30px rgba(15,14,12,.18);padding:16px;font-size:13px;line-height:1.5}
+  .markpanel[hidden]{display:none}
+  .mp-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .mp-head b{font-weight:500;letter-spacing:.08em}
+  .mp-head button{padding:4px 10px;border:1px solid #cfc6b8;background:transparent;color:#5f5e5a;cursor:pointer;font-size:12px}
+  .mp-item{border-top:1px solid var(--line);padding:10px 0}
+  .mp-name{display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--ink)}
+  .mp-name .idx{display:inline-flex;width:18px;height:18px;align-items:center;justify-content:center;background:#d85a30;color:#fff;border-radius:50%;font-size:11px}
+  .mp-name .mp-cur{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:190px}
+  .mp-name .mp-del{margin-left:auto;border:none;background:transparent;color:#a33;cursor:pointer;font-size:12px}
+  .markpanel input{width:100%;padding:7px 9px;border:1px solid #cfc6b8;background:#fff;font-size:13px}
+  .mp-global{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+  .mp-global label{display:block;color:var(--muted);font-size:12px;margin-bottom:5px}
+  .mp-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .mp-actions button{padding:8px 14px;border:1px solid var(--ink);background:var(--ink);color:#fffdf9;cursor:pointer;font-size:12px;letter-spacing:.08em}
+  .mp-actions button.ghost{background:transparent;color:var(--ink)}
+  .mp-actions button:disabled{opacity:.45;cursor:wait}
+  .mp-preview{margin-top:6px;color:#0f6e56;font-size:12px;white-space:pre-line}
+  .ai-status{margin-top:10px;min-height:18px;font-size:12px;color:var(--muted)}
+  .ai-status.ok{color:#0f6e56}.ai-status.err{color:#a33}
 </style>
 </head>
 <body>
 <div class="editbar sans" id="editBar" hidden>
-  <span>可视化编辑中：直接点页面文字修改</span>
+  <span id="editTip">可视化编辑中：直接点页面文字修改</span>
+  <button type="button" id="modeText" class="active">直接改字</button>
+  <button type="button" id="modePick" class="ghost">圈选 + AI</button>
   <button type="button" id="saveContent">保存文案</button>
   <button type="button" class="ghost" id="resetContent">放弃修改</button>
   <span class="st" id="contentStatus"></span>
+</div>
+<div class="markpanel sans" id="markPanel" hidden>
+  <div class="mp-head"><b>已标记 <span id="markCount">0</span> 处</b><button type="button" id="clearMarks">清空标记</button></div>
+  <div id="markList"></div>
+  <div class="mp-global"><label>统一提示词（作用于所有标记处）</label><input id="globalHint" placeholder="例：更简洁、偏外贸 B2B 口吻，突出小批量起订"></div>
+  <div class="mp-actions">
+    <button type="button" id="aiRun">AI 生成修改</button>
+    <button type="button" id="aiApply" class="ghost" disabled>应用到网站</button>
+    <button type="button" id="aiDiscard" class="ghost" disabled>放弃预览</button>
+  </div>
+  <div class="ai-status" id="aiStatus"></div>
 </div>
 <nav>
   <div class="logo" data-content-key="nav_brand">LUNMONT</div>
@@ -295,8 +334,160 @@ $('#resetContent').onclick = ()=>{
   applyContent(contentBaseline || contentCache || snapshotContent());
   setContentStatus('已放弃未保存的修改');
 };
+
+/* ---- AI 修图式编辑：圈选标记 + 提示词 → 预览 → 应用 ---- */
+const FIELD_LABELS = {
+  nav_brand:'品牌名', nav_products:'导航·产品展示', nav_contact:'导航·联系我们',
+  hero_kicker:'首屏小标题', hero_title:'首屏主标题', hero_sub:'首屏副标题', hero_cta:'首屏按钮',
+  stat1_label:'数据·展示产品', stat2_num:'数据·小批量', stat2_label:'数据·灵活起订',
+  stat3_num:'数据·出口', stat3_label:'数据·进出口直营',
+  products_kicker:'栏目小标题', products_title:'栏目标题',
+  empty_text:'空态提示', admin_title:'管理区标题', admin_hint:'管理区说明',
+  contact_kicker:'联系区小标题', contact_title:'联系区标题', contact_sub:'联系区副标题',
+  contact_email:'联系邮箱', footer_left:'页脚左', footer_right:'页脚右'
+};
+let pickMode = false, markedKeys = [], aiEdits = null;
+
+function nodeOf(k){ return document.querySelector('[data-content-key="'+k+'"]'); }
+function labelOf(k){ return FIELD_LABELS[k] || k; }
+function setAiStatus(t, cls){ const s=$('#aiStatus'); s.textContent=t; s.className='ai-status '+(cls||''); }
+
+function renderMarks(){
+  const box=$('#markList'); box.innerHTML='';
+  $('#markCount').textContent = markedKeys.length;
+  markedKeys.forEach((k,i)=>{
+    const el=nodeOf(k);
+    const cur=((el && (el.innerText||el.textContent)) || '').replace(/\s+/g,' ').trim();
+    const div=document.createElement('div'); div.className='mp-item';
+    div.innerHTML='<div class="mp-name"><span class="idx">'+(i+1)+'</span><span>'+esc(labelOf(k))+'</span>'+
+      '<span class="mp-cur" title="'+esc(cur)+'">当前：'+esc(cur)+'</span>'+
+      '<button type="button" class="mp-del" data-key="'+esc(k)+'">移除</button></div>'+
+      '<input class="mp-hint" data-key="'+esc(k)+'" placeholder="这处怎么改？留空用统一提示词">'+
+      '<div class="mp-preview" data-key="'+esc(k)+'"></div>';
+    box.appendChild(div);
+  });
+  // 铁律：innerHTML 重建的列表，事件绑定必须写在重建函数末尾
+  box.querySelectorAll('.mp-del').forEach(b=>b.onclick=()=>{ toggleMark(b.dataset.key); });
+  if(aiEdits){
+    aiEdits.forEach(e=>{
+      const p=box.querySelector('.mp-preview[data-key="'+e.key+'"]');
+      if(p) p.textContent='建议：'+e.after;
+    });
+  }
+}
+
+function toggleMark(k){
+  const i=markedKeys.indexOf(k);
+  const el=nodeOf(k);
+  if(i>=0){
+    markedKeys.splice(i,1);
+    if(el) el.classList.remove('marked');
+  } else {
+    markedKeys.push(k);
+    if(el) el.classList.add('marked');
+  }
+  renderMarks();
+}
+
+function clearMarkHighlights(){
+  contentNodes().forEach(el=>el.classList.remove('marked','ai-preview'));
+}
+
+function applyPreview(on){
+  (aiEdits||[]).forEach(e=>{
+    const el=nodeOf(e.key); if(!el) return;
+    if(on){
+      if(el.dataset.aiBefore===undefined) el.dataset.aiBefore=el.textContent;
+      el.textContent=e.after; el.classList.add('ai-preview');
+    } else {
+      if(el.dataset.aiBefore!==undefined){ el.textContent=el.dataset.aiBefore; delete el.dataset.aiBefore; }
+      el.classList.remove('ai-preview');
+    }
+  });
+}
+
+function setPickMode(on){
+  pickMode=on;
+  document.body.classList.toggle('pick-on', on);
+  $('#markPanel').hidden=!on;
+  setEditable(editMode && !on);
+  $('#modeText').classList.toggle('active', !on);
+  $('#modePick').classList.toggle('active', on);
+  $('#modeText').classList.toggle('ghost', on);
+  $('#modePick').classList.toggle('ghost', !on);
+  $('#editTip').textContent = on ? '圈选模式：点页面文字加入标记，再写提示词' : '可视化编辑中：直接点页面文字修改';
+  $('#saveContent').disabled = on;
+  $('#resetContent').disabled = on;
+  if(on){ renderMarks(); }
+  else { applyPreview(false); aiEdits=null; clearMarkHighlights(); markedKeys=[]; renderMarks(); }
+}
+
+async function aiRun(){
+  if(!markedKeys.length){ setAiStatus('先点页面文字加入标记','err'); return; }
+  const marks=markedKeys.map(k=>{
+    const el=nodeOf(k);
+    const inp=document.querySelector('.mp-hint[data-key="'+k+'"]');
+    return { key:k, label:labelOf(k),
+      text:((el && (el.innerText||el.textContent)) || '').replace(/\r/g,'').trim(),
+      hint:inp?inp.value.trim():'' };
+  });
+  const hint=$('#globalHint').value.trim();
+  if(!hint && marks.every(m=>!m.hint)){ setAiStatus('写一条提示词，或给每处单独写','err'); return; }
+  const btn=$('#aiRun'); btn.disabled=true; setAiStatus('AI 正在生成…');
+  applyPreview(false); aiEdits=null;
+  $('#aiApply').disabled=true; $('#aiDiscard').disabled=true;
+  try{
+    const r=await api('/ai-edit',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({marks,hint})});
+    const d=await r.json().catch(()=>({}));
+    if(r.status===401) throw new Error('管理密钥错误，请退出管理模式重新输入');
+    if(!r.ok) throw new Error(d.error || d.detail || r.status);
+    aiEdits=d.edits||[];
+    applyPreview(true);
+    renderMarks();
+    $('#aiApply').disabled=false; $('#aiDiscard').disabled=false;
+    setAiStatus('已生成 '+aiEdits.length+' 处建议，绿色虚线为预览','ok');
+  }catch(e){ setAiStatus('生成失败：'+String(e.message||e).slice(0,80),'err'); }
+  finally{ btn.disabled=false; }
+}
+
+async function aiApply(){
+  if(!aiEdits) return;
+  const content=snapshotContent();
+  content.seo_title=$('#seoTitle').value.trim()||content.seo_title;
+  content.seo_desc=$('#seoDesc').value.trim()||content.seo_desc;
+  const btn=$('#aiApply'); btn.disabled=true; setAiStatus('正在保存…');
+  try{
+    const r=await api('/content',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({content})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.error||d.detail||r.status);
+    contentCache=content; contentBaseline=content;
+    contentNodes().forEach(el=>{ el.classList.remove('ai-preview'); delete el.dataset.aiBefore; });
+    aiEdits=null; $('#aiDiscard').disabled=true;
+    renderMarks();
+    setAiStatus('已应用到网站，访客刷新即可看到','ok');
+    setContentStatus('AI 修改已保存','ok');
+  }catch(e){ setAiStatus('保存失败：'+String(e.message||e).slice(0,80),'err'); btn.disabled=false; }
+}
+
+$('#modeText').onclick=()=>{ if(pickMode) setPickMode(false); };
+$('#modePick').onclick=()=>{ if(!pickMode) setPickMode(true); };
+$('#clearMarks').onclick=()=>{
+  applyPreview(false); aiEdits=null; markedKeys=[]; clearMarkHighlights(); renderMarks();
+  $('#aiApply').disabled=true; $('#aiDiscard').disabled=true; setAiStatus('已清空标记');
+};
+$('#aiRun').onclick=aiRun;
+$('#aiApply').onclick=aiApply;
+$('#aiDiscard').onclick=()=>{
+  applyPreview(false); aiEdits=null; renderMarks();
+  $('#aiApply').disabled=true; $('#aiDiscard').disabled=true; setAiStatus('已放弃预览');
+};
 document.addEventListener('click', e=>{
-  if(editMode && e.target.closest && e.target.closest('[data-content-key]')) e.preventDefault();
+  const el=e.target.closest && e.target.closest('[data-content-key]');
+  if(!editMode || !el) return;
+  e.preventDefault();
+  if(pickMode) toggleMark(el.dataset.contentKey);
 }, true);
 
 function render(items) {
@@ -379,7 +570,8 @@ $('#editToggle').onclick=async()=>{
   }
   document.body.classList.toggle('edit-on', editMode);
   $('#editBar').hidden = !editMode;
-  setEditable(editMode);
+  if(!editMode && pickMode) setPickMode(false);
+  setEditable(editMode && !pickMode);
   if(editMode){
     primeSeo();
     setContentStatus('正在读取最新文案…');
