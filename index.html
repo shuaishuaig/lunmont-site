@@ -1012,17 +1012,22 @@ let styleLive = {}, styleDraft = {}, styleTarget = null, styleLoadSeq = 0;
 function spStatus(t, cls){ const s=$('#spStatus'); s.textContent=t; s.className='ai-status '+(cls||''); }
 function cloneStyles(o){ return JSON.parse(JSON.stringify(o||{})); }
 
+// 生成样式覆盖规则。为什么必须 !important：
+// 主题里像 `.hero .cap h1`（0,2,1）这类规则特异性远高于单个属性选择器
+// `[data-content-key]`（0,1,0），不加 !important 时字号/字重/行高/字距会被主题压回去
+// （而 color/align/font-family 因为主题只是继承、没直接声明，反而侥幸生效）。
+// 用户明确设定的样式就是最终口径，重置/放弃即移除规则，主题自动恢复，不会留下副作用。
 function buildStyleCss(map){
   let out='';
   Object.keys(map||{}).forEach(k=>{
     const s=map[k]||{}; const d=[];
-    if(s.fontSize) d.push('font-size:'+Number(s.fontSize)+'px');
-    if(s.fontWeight) d.push('font-weight:'+Number(s.fontWeight));
-    if(s.color) d.push('color:'+s.color);
-    if(s.align) d.push('text-align:'+s.align);
-    if(s.lineHeight) d.push('line-height:'+Number(s.lineHeight));
-    if(s.letterSpacing!==undefined && s.letterSpacing!=='') d.push('letter-spacing:'+Number(s.letterSpacing)+'em');
-    if(s.fontFamily && FONT_STACKS[s.fontFamily]) d.push('font-family:'+FONT_STACKS[s.fontFamily]);
+    if(s.fontSize) d.push('font-size:'+Number(s.fontSize)+'px!important');
+    if(s.fontWeight) d.push('font-weight:'+Number(s.fontWeight)+'!important');
+    if(s.color) d.push('color:'+s.color+'!important');
+    if(s.align) d.push('text-align:'+s.align+'!important');
+    if(s.lineHeight) d.push('line-height:'+Number(s.lineHeight)+'!important');
+    if(s.letterSpacing!==undefined && s.letterSpacing!=='') d.push('letter-spacing:'+Number(s.letterSpacing)+'em!important');
+    if(s.fontFamily && FONT_STACKS[s.fontFamily]) d.push('font-family:'+FONT_STACKS[s.fontFamily]+'!important');
     if(d.length) out+='[data-content-key="'+k+'"]{'+d.join(';')+'}\n';
   });
   return out;
