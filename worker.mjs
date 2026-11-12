@@ -23,14 +23,95 @@ const SETTINGS_SCHEMA = `CREATE TABLE IF NOT EXISTS settings (
   value TEXT NOT NULL DEFAULT ''
 )`;
 
-// AI 文案编辑：密钥只存 D1 settings，绝不进公开仓库；提示词约束模型只回纯文本 JSON。
-const AI_SYS_PROMPT = `你是网站文案编辑。用户给出若干网页文案字段（key / 中文名 / 当前文本 / 单条提示词），以及一条全局提示词。
+// 内容版本：page/locale 从第一版就留列，避免以后加双语要做全量数据迁移。
+// 每次保存生成一版完整快照；回滚 = 把某历史版写回 site_content 并再记一版。
+const VERSIONS_SCHEMA = `CREATE TABLE IF NOT EXISTS content_versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  page TEXT NOT NULL DEFAULT 'home',
+  locale TEXT NOT NULL DEFAULT 'zh',
+  version INTEGER NOT NULL,
+  content_json TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  created_by TEXT NOT NULL DEFAULT 'admin',
+  created_at TEXT DEFAULT (datetime('now'))
+)`;
+const PAGE = 'home';
+const LOCALE = 'zh';
+
+// AI 文案编辑：密钥只存 D1 settings，绝不进公开仓库；AI 只返回数据，永不返回代码。
+// 品牌词库 / 历史语气样本 / 禁用词本机没有，就不硬编（文档禁止代理自己编文案素材）。
+const AI_SYS_PROMPT = `你是网站文案编辑。输入包含页面 slug、语言 locale、若干字段（key / 中文名 / 当前文本 / 单条提示词 / maxLen 字数上限），以及一条全局提示词。
 要求：
-1. 只改文字，不输出 HTML、Markdown、解释或额外内容。
-2. 严格返回 JSON 对象：键必须是给出的 key，值是修改后的纯文本字符串。
-3. 没有对应提示词的字段保持原文，也要在 JSON 中原样返回。
-4. 保持原文语言与大致长度；不要新增键、不要删键、不要输出数组。
-5. 若提示词要求调整语气/风格，只改措辞，不编造公司名、电话、邮箱等事实信息。`;
+1. 给出 2 到 3 个互不相同、都可直接采用的改写方案。
+2. 严格返回单个 JSON 对象，不要 HTML、Markdown、代码块围栏或解释文字。
+3. 顶层结构只能是：{"candidates":[{"why":"一句话说明该方案","risk":"低或中或高","edits":{"<key>":"改写后的纯文本"}}]}
+4. 每个 edits 的键只能来自给出的 key，值必须是纯文本字符串；没有提示词的字段保持原文并原样返回。
+5. 每个字段值不得超过该字段的 maxLen（中文按字、英文按字符）；保持原文语言，不要编造公司名、电话、邮箱等事实信息。
+6. 不要新增顶层键，不要返回数组以外形式的 candidates。`;
+
+// 长度上限按字段类型封顶 + 原文长度自适应，不硬编码任何具体文案或 key 名。
+function aiLimit(key, text) {
+  const n = [...String(text || '')].length;
+  let cap = 80;
+  if (/(title|kicker|brand|num|cta|label)$/.test(key)) cap = 40;
+  else if (/(sub|hint|desc|text)$/.test(key)) cap = 160;
+  return Math.min(cap, Math.max(24, Math.ceil(n * 1.5) + 8));
+}
+
+// 只接受纯文本；含 HTML / 代码围栏 / 常见 Markdown 的值直接判非法（连带整个候选丢弃）。
+function cleanAIText(v, limit) {
+  if (typeof v !== 'string') return null;
+  const s = v.replace(/\r/g, '').trim();
+  if (/[<>]|```|\*\*|\]\(/.test(s)) return null;
+  const chars = [...s];
+  const truncated = chars.length > limit;
+  return { text: truncated ? chars.slice(0, limit).join('') : s, truncated };
+}
+
+function normalizeCandidates(parsed, marks, rejects) {
+  let p = parsed;
+  // 容错：模型偶发回老的扁平格式 {key:text}，包成单候选，不让整次生成白跑
+  if (p && !p.candidates && typeof p === 'object' && !Array.isArray(p) &&
+      marks.some(m => typeof p[m.key] === 'string')) {
+    p = { candidates: [{ why: '按提示词改写', risk: '低', edits: p }] };
+  }
+  const list = Array.isArray(p && p.candidates) ? p.candidates.slice(0, 3) : [];
+  if (!list.length) { rejects.push('缺 candidates 数组'); return []; }
+  const allowed = new Set(marks.map(m => m.key));
+  const out = [];
+  list.forEach((c, i) => {
+    const tag = '候选' + (i + 1);
+    if (!c || typeof c !== 'object' || Array.isArray(c)) { rejects.push(tag + ' 不是对象'); return; }
+    const em = c.edits;
+    if (!em || typeof em !== 'object' || Array.isArray(em)) { rejects.push(tag + ' 缺 edits 对象'); return; }
+    const extra = Object.keys(em).filter(k => !allowed.has(k));
+    if (extra.length) { rejects.push(tag + ' 含非白名单字段 ' + extra[0]); return; }
+    const edits = [];
+    let bad = false, truncated = false;
+    for (const m of marks) {
+      const lim = aiLimit(m.key, m.text);
+      const v = Object.prototype.hasOwnProperty.call(em, m.key) ? em[m.key] : m.text;
+      const r = cleanAIText(v, lim);
+      if (!r) { rejects.push(tag + ' 字段 ' + m.key + ' 含标记/代码或非字符串'); bad = true; break; }
+      truncated = truncated || r.truncated;
+      edits.push({ key: m.key, before: m.text, after: r.text, maxLen: lim });
+    }
+    if (bad) return;
+    const sig = edits.map(e => e.after).join('\u0001');
+    if (out.some(o => o._sig === sig)) { rejects.push(tag + ' 与已有方案重复'); return; }
+    out.push({
+      id: 'c' + (i + 1),
+      why: String(c.why || '方案 ' + (i + 1)).replace(/[<>]/g, '').slice(0, 120),
+      risk: /^(低|中|高)$/.test(String(c.risk || '')) ? String(c.risk) : '低',
+      truncated, edits, _sig: sig
+    });
+  });
+  return out.map(o => {
+    const copy = Object.assign({}, o);
+    delete copy._sig;
+    return copy;
+  });
+}
 
 async function readAIConfig(env) {
   const r = await env.DB.prepare(
@@ -113,6 +194,47 @@ async function ensureContent(env) {
   contentReady = true;
 }
 
+async function readContentMap(env) {
+  await ensureContent(env);
+  const r = await env.DB.prepare('SELECT key, value FROM site_content').all();
+  const c = {};
+  for (const row of (r.results || [])) c[row.key] = row.value;
+  return c;
+}
+
+function sameContent(a, b) {
+  const ka = Object.keys(a || {}).sort();
+  const kb = Object.keys(b || {}).sort();
+  if (ka.length !== kb.length) return false;
+  return ka.every((k, i) => k === kb[i] && a[k] === b[k]);
+}
+
+async function saveVersion(env, content, note) {
+  await env.DB.prepare(VERSIONS_SCHEMA).run();
+  const r = await env.DB.prepare(
+    'SELECT COALESCE(MAX(version), 0) AS v FROM content_versions WHERE page=? AND locale=?'
+  ).bind(PAGE, LOCALE).first();
+  const v = ((r && r.v) || 0) + 1;
+  await env.DB.prepare(
+    'INSERT INTO content_versions (page, locale, version, content_json, note, created_by) VALUES (?, ?, ?, ?, ?, ?)'
+  ).bind(PAGE, LOCALE, v, JSON.stringify(content), String(note || '').slice(0, 120), 'admin').run();
+  if (v > 120) {
+    await env.DB.prepare('DELETE FROM content_versions WHERE page=? AND locale=? AND version<=?')
+      .bind(PAGE, LOCALE, v - 120).run();
+  }
+  return v;
+}
+
+async function writeContentMap(env, c) {
+  const keys = Object.keys(c);
+  const sql = `INSERT INTO site_content (key, value, updated_at) VALUES ` +
+    keys.map(() => "(?, ?, datetime('now'))").join(', ') +
+    ` ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`;
+  const params = [];
+  for (const k of keys) params.push(k, c[k].slice(0, MAX_CONTENT_VALUE));
+  await env.DB.prepare(sql).bind(...params).run();
+}
+
 export default {
   async fetch(request, env) {
     const { method } = request;
@@ -155,8 +277,64 @@ export default {
       }
     }
 
+    if (route === '/content/versions' && method === 'GET') {
+      // 历史文案不对外公开，仅管理模式可查
+      if (!(await checkAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
+      try {
+        await env.DB.prepare(VERSIONS_SCHEMA).run();
+        const r = await env.DB.prepare(
+          'SELECT id, version, note, created_at, content_json FROM content_versions ' +
+          'WHERE page=? AND locale=? ORDER BY version DESC LIMIT 40'
+        ).bind(PAGE, LOCALE).all();
+        const versions = (r.results || []).map(row => {
+          let content = {};
+          try { content = JSON.parse(row.content_json) || {}; } catch { content = {}; }
+          return {
+            id: row.id, version: row.version, note: row.note,
+            created_at: row.created_at, keys: Object.keys(content).length, content
+          };
+        });
+        return json({ page: PAGE, locale: LOCALE, versions });
+      } catch (e) {
+        return json({ error: 'list failed', detail: String(e && e.message || e).slice(0, 160) }, 500);
+      }
+    }
+
     if (method === 'POST' || method === 'DELETE') {
       if (!(await checkAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
+    }
+
+    if (route === '/content/rollback' && method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+      const v = Number(body && body.version);
+      if (!Number.isInteger(v) || v <= 0) return json({ error: 'version required' }, 400);
+      try {
+        await env.DB.prepare(VERSIONS_SCHEMA).run();
+        const row = await env.DB.prepare(
+          'SELECT content_json FROM content_versions WHERE page=? AND locale=? AND version=?'
+        ).bind(PAGE, LOCALE, v).first();
+        if (!row) return json({ error: 'version not found' }, 404);
+        let old = {};
+        try { old = JSON.parse(row.content_json) || {}; } catch { return json({ error: 'bad snapshot' }, 500); }
+        const keys = Object.keys(old);
+        if (!keys.length || keys.length > 60) return json({ error: 'bad snapshot keys' }, 500);
+        for (const k of keys) {
+          if (!/^[a-z0-9_]{1,40}$/.test(k) || typeof old[k] !== 'string')
+            return json({ error: 'bad snapshot value: ' + k }, 500);
+        }
+        const clean = {};
+        for (const k of keys) clean[k] = old[k].slice(0, MAX_CONTENT_VALUE);
+        const before = await readContentMap(env);
+        await writeContentMap(env, clean);
+        const changed = !sameContent(before, clean);
+        const newV = changed
+          ? await saveVersion(env, clean, '回滚到 v' + v)
+          : null;
+        return json({ ok: true, restoredFrom: v, version: newV, unchanged: !changed });
+      } catch (e) {
+        return json({ error: 'rollback failed', detail: String(e && e.message || e).slice(0, 200) }, 500);
+      }
     }
 
     if (route === '/ai-config' && method === 'POST') {
@@ -190,10 +368,12 @@ export default {
       for (const m of raw) {
         const key = String((m && m.key) || '');
         if (!/^[a-z0-9_]{1,40}$/.test(key)) continue;
+        const text = String((m && m.text) || '').slice(0, 1200);
         marks.push({
           key,
           label: String((m && m.label) || key).slice(0, 60),
-          text: String((m && m.text) || '').slice(0, 1200),
+          text,
+          maxLen: aiLimit(key, text),
           hint: String((m && m.hint) || '').slice(0, 500)
         });
       }
@@ -208,10 +388,10 @@ export default {
         model: cfg.ai_model || 'deepseek-chat',
         messages: [
           { role: 'system', content: AI_SYS_PROMPT },
-          { role: 'user', content: JSON.stringify({ globalHint, fields: marks }) }
+          { role: 'user', content: JSON.stringify({ page: PAGE, locale: LOCALE, globalHint, fields: marks }) }
         ],
-        temperature: 0.5,
-        max_tokens: 1600
+        temperature: 0.7,
+        max_tokens: 2400
       };
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 45000);
@@ -238,12 +418,13 @@ export default {
       const parsed = parseAIJson(content);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
         return json({ error: 'AI 结果无法解析', raw: String(content).slice(0, 300) }, 502);
-      const edits = marks.map(m => ({
-        key: m.key,
-        before: m.text,
-        after: (typeof parsed[m.key] === 'string' ? parsed[m.key] : m.text).slice(0, MAX_CONTENT_VALUE)
-      }));
-      return json({ ok: true, edits });
+      const rejects = [];
+      const candidates = normalizeCandidates(parsed, marks, rejects);
+      if (!candidates.length)
+        return json({ error: 'AI 结果未通过校验', rejected: rejects.slice(0, 6),
+                      raw: String(content).slice(0, 300) }, 502);
+      // edits 保留为首候选，兼容旧调用；前端一律用 candidates，点「采用」才进预览
+      return json({ ok: true, candidates, edits: candidates[0].edits, rejected: rejects.slice(0, 6) });
     }
 
     if (route === '/content' && method === 'POST') {
@@ -259,14 +440,17 @@ export default {
         if (typeof c[k] !== 'string') return json({ error: 'invalid value: ' + k }, 400);
       }
       try {
-        await ensureContent(env);
-        const sql = `INSERT INTO site_content (key, value, updated_at) VALUES ` +
-          keys.map(() => "(?, ?, datetime('now'))").join(', ') +
-          ` ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`;
-        const params = [];
-        for (const k of keys) params.push(k, c[k].slice(0, MAX_CONTENT_VALUE));
-        await env.DB.prepare(sql).bind(...params).run();
-        return json({ ok: true, saved: keys.length });
+        const clean = {};
+        for (const k of keys) clean[k] = c[k].slice(0, MAX_CONTENT_VALUE);
+        const before = await readContentMap(env);
+        await writeContentMap(env, clean);
+        // 保存前是整个 live 快照，保存后是 before 叠加本次字段；内容没变就不涨版本
+        const after = Object.assign({}, before, clean);
+        const changed = !sameContent(before, after);
+        const version = changed
+          ? await saveVersion(env, after, String((body && body.note) || '').slice(0, 120) || '保存文案')
+          : null;
+        return json({ ok: true, saved: keys.length, version, unchanged: !changed });
       } catch (e) {
         return json({ error: 'save failed', detail: String(e && e.message || e).slice(0, 200) }, 500);
       }
