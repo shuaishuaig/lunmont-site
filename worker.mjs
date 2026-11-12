@@ -38,6 +38,31 @@ function productKey(p) {
   return 'nm:' + name + '|' + cat;
 }
 
+// 图片 URL 键：只对 http(s) 图有效（dataURL 每次压缩都不一样，绝不能当键）。
+// 用途是「历史行过渡」——老 149 行没有 sku，且名称+分类大量重名，
+// 只有图片 URL 是逐行唯一的，用它当历史键才不会把多行压成一个键。
+function imageKey(image) {
+  const s = String(image || '').trim();
+  if (!/^https?:\/\//i.test(s)) return '';
+  return 'img:' + s.replace(/[?#].*$/, '').replace(/\s+/g, '').toLowerCase().slice(0, 200);
+}
+
+// 老行（无 ukey）的回填键：优先图片 URL，其次 名称+分类
+function backfillKey(p) {
+  return imageKey(p && p.image) || productKey(p);
+}
+
+// 「接管」候选键：带 sku 发布时新键查不到，就用这些老键找同一条历史行，
+// 找到就地改写键，绝不新增。顺序=图片优先（唯一性最强），再名称+分类。
+function adoptKeys(item) {
+  const out = [];
+  const img = imageKey(item.image);
+  if (img) out.push(img);
+  const nm = productKey({ name: item.name, category: item.category });
+  if (out.indexOf(nm) < 0) out.push(nm);
+  return out;
+}
+
 const CONTENT_SCHEMA = `CREATE TABLE IF NOT EXISTS site_content (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL DEFAULT '',
@@ -251,7 +276,8 @@ async function ensureProducts(env) {
   const rows = all.results || [];
   const backfill = [];
   for (const p of rows) {
-    const k = productKey(p);
+    // 已有 sku 键的行不动；空键/老键按 backfillKey 归一（图片优先，避免重名塌缩）
+    const k = (p.ukey && p.ukey.indexOf('sku:') === 0) ? p.ukey : backfillKey(p);
     if (p.ukey !== k) backfill.push(env.DB.prepare('UPDATE products SET ukey=? WHERE id=?').bind(k, p.id));
   }
   if (backfill.length) await env.DB.batch(backfill);
@@ -303,7 +329,8 @@ function cleanProduct(body) {
 // 逐条 INSERT/UPDATE 会变成几百次往返（D1 每次往返成本高），批量发布必须走这条路。
 // 同样带「接管」：sku: 键没命中时用 nm: 键找历史行，命中就原地改写键，绝不新增。
 async function upsertMany(env, items) {
-  const all = await env.DB.prepare('SELECT id, name, category, image, sku, ukey FROM products').all();
+  // ORDER BY id：同键多行（历史重复）时 Map 后写覆盖，命中的是最新那条
+  const all = await env.DB.prepare('SELECT id, name, category, image, sku, ukey FROM products ORDER BY id').all();
   const cur = new Map();
   for (const p of (all.results || [])) cur.set(p.ukey, p);
   let created = 0, updated = 0, unchanged = 0, adopted = 0;
@@ -312,9 +339,11 @@ async function upsertMany(env, items) {
     let ex = cur.get(it.ukey);
     let adoptFrom = null;
     if (!ex && it.ukey.indexOf('sku:') === 0) {
-      const legacy = productKey({ name: it.name, category: it.category });
-      const old = legacy !== it.ukey ? cur.get(legacy) : null;
-      if (old) { ex = old; adoptFrom = legacy; }
+      for (const lk of adoptKeys(it)) {
+        if (lk === it.ukey) continue;
+        const old = cur.get(lk);
+        if (old) { ex = old; adoptFrom = lk; break; }
+      }
     }
     if (!ex) {
       created++;
@@ -358,11 +387,11 @@ async function upsertProduct(env, item) {
     .bind(item.ukey).first();
   let adopted = false;
   if (!ex && item.ukey.indexOf('sku:') === 0) {
-    const legacy = productKey({ name: item.name, category: item.category });
-    if (legacy !== item.ukey) {
+    for (const lk of adoptKeys(item)) {
+      if (lk === item.ukey) continue;
       const old = await env.DB.prepare('SELECT id, name, category, image, sku, ukey FROM products WHERE ukey=?')
-        .bind(legacy).first();
-      if (old) { ex = old; adopted = true; }
+        .bind(lk).first();
+      if (old) { ex = old; adopted = true; break; }
     }
   }
   if (ex) {
@@ -1013,6 +1042,16 @@ export default {
         out.flagCleared = true;
       } catch (e) {}
       productsReady = false;   // 下次请求重新走迁移（补列+回填 ukey）
+      // 顺手把回填也跑完，省得还要靠一次真实发布来触发
+      try { await ensureProducts(env); out.migrated = true; }
+      catch (e) { out.migrateError = String(e && e.message || e).slice(0, 160); }
+      try {
+        const s = await env.DB.prepare(
+          "SELECT COUNT(*) AS rows, COUNT(DISTINCT ukey) AS keys FROM products"
+        ).first();
+        out.stats = s;
+        out.dupes = (await dupeReport(env)).length;
+      } catch (e) {}
       return json(out);
     }
 
