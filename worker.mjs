@@ -109,6 +109,24 @@ const STYLES_SCHEMA = `CREATE TABLE IF NOT EXISTS content_styles (
   updated_at TEXT DEFAULT (datetime('now'))
 )`;
 
+// 询盘：访客提交的采购意向。公开只写、管理模式可读/删。
+// 防滥用：蜜罐字段（人类看不见，机器人会填）+ 长度截断 + 频率上限（同 IP 每小时）。
+const INQUIRIES_SCHEMA = `CREATE TABLE IF NOT EXISTS inquiries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL DEFAULT '',
+  contact TEXT NOT NULL DEFAULT '',
+  message TEXT NOT NULL DEFAULT '',
+  product TEXT NOT NULL DEFAULT '',
+  ip TEXT NOT NULL DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now'))
+)`;
+let inquiriesReady = false;
+async function ensureInquiries(env) {
+  if (inquiriesReady) return;
+  await env.DB.prepare(INQUIRIES_SCHEMA).run();
+  inquiriesReady = true;
+}
+
 const STYLE_PROPS = {
   fontSize: v => Number.isInteger(Number(v)) && Number(v) >= 8 && Number(v) <= 120,
   fontWeight: v => ['300', '400', '500', '600', '700', '800'].indexOf(String(v)) >= 0,
@@ -240,6 +258,13 @@ const DEFAULT_CONTENT = {
   'contact_email': 'info@lunmont.asia',
   'footer_left': '© 2026 LUNMONT · 义乌市玥岑进出口有限公司',
   'footer_right': 'HAIR ACCESSORIES WHOLESALE',
+  'filter_all': '全部',
+  'form_title': '在线询盘 · Send Inquiry',
+  'form_name': '姓名 / Name',
+  'form_contact': '邮箱或 WhatsApp / Email or WhatsApp',
+  'form_msg': '询盘内容（想询价的款号、数量、目的港）',
+  'form_submit': '发送询盘 Send',
+  'wa_btn': 'WhatsApp 咨询',
   'seo_title': 'LUNMONT — 发夹与饰品批发 | 义乌市玥岑进出口有限公司',
   'seo_desc': 'LUNMONT（义乌市玥岑进出口有限公司）— 发夹与饰品批发，支持小批量起订与出口订单。Yiwu Cenova Import and Export Co., Ltd.'
 };
@@ -695,6 +720,48 @@ export default {
       }
     }
 
+    // —— 公开写接口：询盘提交（必须放在 checkAdmin 门禁之前）——
+    if (route === '/inquiries' && method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+      if (body && String(body._hp || '')) return json({ ok: true }); // 蜜罐命中：假装成功
+      const name = String((body && body.name) || '').trim().slice(0, 120);
+      const contact = String((body && body.contact) || '').trim().slice(0, 160);
+      const message = String((body && body.message) || '').trim().slice(0, 2000);
+      const product = String((body && body.product) || '').trim().slice(0, 200);
+      if (!name || !contact || !message)
+        return json({ error: 'missing fields' }, 400);
+      const ip = (request.headers.get('CF-Connecting-IP') || '').slice(0, 64);
+      try {
+        await ensureInquiries(env);
+        // 同 IP 每小时 ≤ 5 条：足够正常买家，挡脚本轰炸
+        const recent = await env.DB.prepare(
+          "SELECT COUNT(*) AS n FROM inquiries WHERE ip=? AND created_at > datetime('now','-1 hour')"
+        ).bind(ip).first();
+        if (recent && Number(recent.n) >= 5) return json({ error: 'too many' }, 429);
+        await env.DB.prepare(
+          'INSERT INTO inquiries (name, contact, message, product, ip) VALUES (?, ?, ?, ?, ?)'
+        ).bind(name, contact, message, product, ip).run();
+        return json({ ok: true });
+      } catch (e) {
+        return json({ error: 'submit failed', detail: String(e && e.message || e).slice(0, 120) }, 500);
+      }
+    }
+
+    // —— 只读：管理模式查看询盘列表（在 checkAdmin 门禁之前单独判权）——
+    if (route === '/inquiries' && method === 'GET') {
+      if (!(await checkAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
+      try {
+        await ensureInquiries(env);
+        const r = await env.DB.prepare(
+          'SELECT id, name, contact, message, product, created_at FROM inquiries ORDER BY id DESC LIMIT 200'
+        ).all();
+        return json({ inquiries: r.results || [] });
+      } catch (e) {
+        return json({ inquiries: [], detail: String(e && e.message || e).slice(0, 120) });
+      }
+    }
+
     if (method === 'POST' || method === 'DELETE') {
       if (!(await checkAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
     }
@@ -1053,6 +1120,71 @@ export default {
         out.dupes = (await dupeReport(env)).length;
       } catch (e) {}
       return json(out);
+    }
+
+    if (route === '/inquiries' && method === 'DELETE') {
+      const id = Number(url.searchParams.get('id'));
+      if (!Number.isInteger(id) || id <= 0) return json({ error: 'invalid id' }, 400);
+      try {
+        await ensureInquiries(env);
+        await env.DB.prepare('DELETE FROM inquiries WHERE id = ?').bind(id).run();
+        return json({ ok: true });
+      } catch (e) {
+        return json({ error: 'delete failed' }, 500);
+      }
+    }
+
+    // —— 产品字段修改：改名称/分类。sku 键的行 ukey 不变；名称键的行重算 ukey，
+    // 撞唯一索引时报 duplicate，前端提示改名会并入另一款。
+    if (route === '/products/update' && method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+      const id = Number(body && body.id);
+      const name = String((body && body.name) || '').trim().slice(0, 200);
+      const category = String((body && body.category) || '').trim().slice(0, 60);
+      if (!Number.isInteger(id) || id <= 0 || !name) return json({ error: 'invalid fields' }, 400);
+      try {
+        await ensureProducts(env);
+        const cur = await env.DB.prepare('SELECT id, name, sku, ukey FROM products WHERE id=?')
+          .bind(id).first();
+        if (!cur) return json({ error: 'not found' }, 404);
+        const newKey = productKey({ name, category, sku: cur.sku });
+        if (cur.ukey && cur.ukey.indexOf('sku:') === 0) {
+          await env.DB.prepare("UPDATE products SET name=?, category=?, updated_at=datetime('now') WHERE id=?")
+            .bind(name, category, id).run();
+        } else {
+          await env.DB.prepare("UPDATE products SET name=?, category=?, ukey=?, updated_at=datetime('now') WHERE id=?")
+            .bind(name, category, newKey, id).run();
+        }
+        return json({ ok: true, action: 'updated' });
+      } catch (e) {
+        const msg = String(e && e.message || e);
+        if (msg.indexOf('UNIQUE') >= 0) return json({ error: 'duplicate' }, 409);
+        return json({ error: 'update failed', detail: msg.slice(0, 120) }, 500);
+      }
+    }
+
+    // —— 首图：访客可读（公开），管理模式可换（存 settings，不挤占文案字段长度）
+    if (route === '/hero' && method === 'GET') {
+      try {
+        const r = await env.DB.prepare("SELECT value FROM settings WHERE key='hero_img'").first();
+        return json({ image: (r && r.value) || '' });
+      } catch (e) { return json({ image: '' }); }
+    }
+    if (route === '/hero' && method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+      const image = String((body && body.image) || '');
+      if (!/^data:image\/(jpeg|png|webp);base64,/.test(image) || image.length > MAX_IMAGE)
+        return json({ error: 'invalid image' }, 400);
+      try {
+        await env.DB.prepare(
+          "INSERT INTO settings (key, value) VALUES ('hero_img', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+        ).bind(image).run();
+        return json({ ok: true });
+      } catch (e) {
+        return json({ error: 'save failed', detail: String(e && e.message || e).slice(0, 120) }, 500);
+      }
     }
 
     if (route === '/products' && method === 'DELETE') {
