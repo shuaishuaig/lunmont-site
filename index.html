@@ -107,6 +107,8 @@
   .mp-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
   .mp-head b{font-weight:500;letter-spacing:.08em}
   .mp-head button{padding:4px 10px;border:1px solid #cfc6b8;background:transparent;color:#5f5e5a;cursor:pointer;font-size:12px}
+  .mp-head span{display:flex;gap:6px}
+  .mp-head button[hidden]{display:none}
   .mp-item{border-top:1px solid var(--line);padding:10px 0}
   .mp-name{display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--ink)}
   .mp-name .idx{display:inline-flex;width:18px;height:18px;align-items:center;justify-content:center;background:#d85a30;color:#fff;border-radius:50%;font-size:11px}
@@ -125,6 +127,29 @@
   .mp-preview{margin-top:6px;color:#0f6e56;font-size:12px;white-space:pre-line}
   .ai-status{margin-top:10px;min-height:18px;font-size:12px;color:var(--muted)}
   .ai-status.ok{color:#0f6e56}.ai-status.err{color:#a33}
+  .cand-wrap{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+  .cand-wrap[hidden]{display:none}
+  .cand-title{font-size:12px;color:var(--muted);margin-bottom:8px}
+  .cand-card{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px;background:#fff}
+  .cand-card.adopted{border-color:#1d9e75;box-shadow:0 0 0 2px rgba(29,158,117,.16)}
+  .cand-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .cand-head b{font-size:12px}
+  .cand-risk{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:10px;padding:1px 7px}
+  .cand-why{font-size:12px;color:var(--ink);margin:0 0 6px}
+  .cand-diff{font-size:11.5px;color:var(--muted);line-height:1.6;max-height:130px;overflow:auto}
+  .cand-diff div{margin-bottom:3px}
+  .cand-diff .k{color:var(--ink)}
+  .cand-diff .aft{color:#0f6e56}
+  .cand-card button{margin-top:8px;padding:5px 12px;border:1px solid var(--ink);background:var(--ink);color:#fffdf9;cursor:pointer;font-size:12px}
+  .cand-card button.ghost{background:transparent;color:var(--ink)}
+  .cand-warn{font-size:11px;color:#a33;margin-top:4px}
+  #verPanel{width:420px}
+  .ver-banner{font-size:12px;color:#a33;margin-bottom:8px}
+  .ver-banner[hidden]{display:none}
+  .ver-item{border-top:1px solid var(--line);padding:9px 0;font-size:12px}
+  .ver-item .vmeta{color:var(--muted);font-size:11px;margin-top:3px}
+  .ver-item button{margin-top:6px;padding:4px 9px;border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer;font-size:11px;margin-right:6px}
+  .ver-item button:disabled{opacity:.45;cursor:wait}
 </style>
 </head>
 <body>
@@ -134,6 +159,7 @@
   <button type="button" id="modePick" class="ghost">圈选 + AI</button>
   <button type="button" id="saveContent">保存文案</button>
   <button type="button" class="ghost" id="resetContent">放弃修改</button>
+  <button type="button" class="ghost" id="verToggle">版本历史</button>
   <span class="st" id="contentStatus"></span>
 </div>
 <div class="markpanel sans" id="markPanel" hidden>
@@ -146,7 +172,17 @@
     <button type="button" id="aiApply" class="ghost" disabled>应用到网站</button>
     <button type="button" id="aiDiscard" class="ghost" disabled>放弃预览</button>
   </div>
+  <div class="cand-wrap" id="candWrap" hidden>
+    <div class="cand-title" id="candTitle"></div>
+    <div id="candList"></div>
+  </div>
   <div class="ai-status" id="aiStatus"></div>
+</div>
+<div class="markpanel sans" id="verPanel" hidden>
+  <div class="mp-head"><b>版本历史</b><span><button type="button" id="verBack" hidden>返回当前</button><button type="button" id="verClose">关闭</button></span></div>
+  <div class="ver-banner" id="verBanner" hidden></div>
+  <div id="verList"></div>
+  <div class="ai-status" id="verStatus"></div>
 </div>
 <nav>
   <div class="logo" data-content-key="nav_brand">LUNMONT</div>
@@ -329,7 +365,7 @@ async function saveContent(){
   setContentStatus('正在保存…');
   try{
     const r = await api('/content',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({content})});
+      body:JSON.stringify({content,note:'直接改字保存'})});
     if(r.status === 401){ setContentStatus('管理密钥错误，请退出管理模式重新输入','err'); return; }
     const d = await r.json().catch(()=>({}));
     if(!r.ok) throw new Error(d.detail || d.error || r.status);
@@ -358,6 +394,8 @@ const FIELD_LABELS = {
   contact_email:'联系邮箱', footer_left:'页脚左', footer_right:'页脚右'
 };
 let pickMode = false, markedKeys = [], aiEdits = null;
+// AI 多候选：生成后不自动写入 DOM，必须点「采用」才进预览
+let aiCandidates = null, activeCandidate = null, aiRejected = [];
 // 手改文字 / 单条提示词按 key 持久化：renderMarks 会重建列表，不能只依赖 DOM 输入框的值
 let markDirect = {}, markHints = {};
 
@@ -404,6 +442,61 @@ function renderMarks(){
   }
 }
 
+function renderCandidates(){
+  const wrap=$('#candWrap'), box=$('#candList');
+  box.innerHTML='';
+  const list=aiCandidates||[];
+  wrap.hidden=!list.length;
+  if(!list.length) return;
+  $('#candTitle').textContent='AI 方案 '+list.length+' 个 · 点「采用」预览，确认后再点「应用到网站」';
+  list.forEach((c,i)=>{
+    const card=document.createElement('div');
+    card.className='cand-card'+(activeCandidate===c.id?' adopted':'');
+    const head=document.createElement('div'); head.className='cand-head';
+    const b=document.createElement('b'); b.textContent='方案 '+(i+1);
+    const risk=document.createElement('span'); risk.className='cand-risk';
+    risk.textContent='风险：'+(c.risk||'低');
+    head.appendChild(b); head.appendChild(risk);
+    const why=document.createElement('p'); why.className='cand-why'; why.textContent=c.why||'';
+    const diff=document.createElement('div'); diff.className='cand-diff';
+    (c.edits||[]).forEach(e=>{
+      const row=document.createElement('div');
+      const k=document.createElement('span'); k.className='k'; k.textContent=labelOf(e.key)+'：';
+      const bef=document.createElement('span'); bef.textContent=String(e.before||'').replace(/\s+/g,' ');
+      const arr=document.createElement('span'); arr.textContent=' → ';
+      const aft=document.createElement('span'); aft.className='aft';
+      aft.textContent=String(e.after||'').replace(/\s+/g,' ');
+      row.appendChild(k); row.appendChild(bef); row.appendChild(arr); row.appendChild(aft);
+      diff.appendChild(row);
+    });
+    card.appendChild(head); card.appendChild(why); card.appendChild(diff);
+    if(c.truncated){
+      const w=document.createElement('div'); w.className='cand-warn';
+      w.textContent='部分字段超过字数上限，已自动截断'; card.appendChild(w);
+    }
+    const btn=document.createElement('button'); btn.type='button'; btn.className='cand-adopt';
+    btn.dataset.cid=c.id;
+    btn.textContent=activeCandidate===c.id?'重新采用':'采用';
+    if(activeCandidate===c.id) btn.classList.add('ghost');
+    card.appendChild(btn);
+    box.appendChild(card);
+  });
+  // 铁律：innerHTML 重建的列表，事件绑定必须写在重建函数末尾
+  box.querySelectorAll('.cand-adopt').forEach(btn=>btn.onclick=()=>adoptCandidate(btn.dataset.cid));
+}
+
+function adoptCandidate(id){
+  const c=(aiCandidates||[]).find(x=>x.id===id);
+  if(!c) return;
+  applyPreview(false);              // 先还原上一个候选的预览
+  aiEdits=c.edits||[];
+  activeCandidate=id;
+  applyPreview(true);
+  renderMarks(); renderCandidates();
+  $('#aiApply').disabled=false; $('#aiDiscard').disabled=false;
+  setAiStatus('已采用方案，绿虚线为预览；确认后点「应用到网站」','ok');
+}
+
 function toggleMark(k){
   const i=markedKeys.indexOf(k);
   const el=nodeOf(k);
@@ -422,6 +515,9 @@ function toggleMark(k){
 function invalidatePreview(){
   applyPreview(false);
   aiEdits=null;
+  // 标记/提示词一变，旧候选必须作废，否则采用的是上一次提示词的结果
+  aiCandidates=null; activeCandidate=null; aiRejected=[];
+  renderCandidates();
   document.querySelectorAll('.mp-preview').forEach(p=>p.textContent='');
   $('#aiApply').disabled=true;
   $('#aiDiscard').disabled=true;
@@ -481,24 +577,41 @@ async function aiRun(){
     setAiStatus('填「直接改成」手改，或写提示词让 AI 改','err'); return;
   }
   const btn=$('#aiRun'); btn.disabled=true;
-  setAiStatus(needAI ? 'AI 正在生成…' : '正在生成手改预览…');
+  setAiStatus(needAI ? 'AI 正在生成 2–3 个方案…' : '正在生成手改预览…');
   invalidatePreview();
   try{
-    let edits=directEdits.slice();
+    let candidates=[];
     if(needAI){
       const r=await api('/ai-edit',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({marks:aiMarks,hint})});
       const d=await r.json().catch(()=>({}));
       if(r.status===401) throw new Error('管理密钥错误，请退出管理模式重新输入');
-      if(!r.ok) throw new Error(d.error || d.detail || r.status);
-      edits=edits.concat(d.edits||[]);
+      if(!r.ok) throw new Error((d.error||d.detail||r.status) +
+        (d.rejected&&d.rejected.length ? '（已拦截：'+d.rejected.join('；')+'）' : ''));
+      aiRejected=d.rejected||[];
+      // 手改字段并入每个 AI 方案，采用任一方案都不会丢掉手改
+      candidates=(d.candidates||[]).map(c=>({
+        id:c.id, why:c.why||'', risk:c.risk||'低', truncated:!!c.truncated,
+        edits:directEdits.concat(c.edits||[])
+      }));
     }
-    aiEdits=edits;
-    applyPreview(true);
-    renderMarks();
-    $('#aiApply').disabled=false; $('#aiDiscard').disabled=false;
-    setAiStatus('已生成 '+edits.length+' 处建议（绿虚线为预览），确认后再点「应用到网站」','ok');
-  }catch(e){ invalidatePreview(); setAiStatus('生成失败：'+String(e.message||e).slice(0,80),'err'); }
+    if(!candidates.length && directEdits.length){
+      candidates=[{id:'manual',why:'手动填写的文字',risk:'低',truncated:false,edits:directEdits}];
+    }
+    if(!candidates.length) throw new Error('AI 没有返回可用方案');
+    aiCandidates=candidates; activeCandidate=null; aiEdits=null;
+    renderCandidates(); renderMarks();
+    $('#aiApply').disabled=true; $('#aiDiscard').disabled=true;
+    if(!needAI){
+      // 纯手改无需多候选选择，直接进预览，保持原来的手感
+      adoptCandidate(candidates[0].id);
+      setAiStatus('手改已预览，确认后点「应用到网站」','ok');
+    } else {
+      let s='已生成 '+candidates.length+' 个方案，点任一「采用」预览';
+      if(aiRejected.length) s+='（已拦截 '+aiRejected.length+' 个不合规方案）';
+      setAiStatus(s,'ok');
+    }
+  }catch(e){ invalidatePreview(); setAiStatus('生成失败：'+String(e.message||e).slice(0,100),'err'); }
   finally{ btn.disabled=false; }
 }
 
@@ -510,16 +623,19 @@ async function aiApply(){
   content.seo_desc=$('#seoDesc').value.trim()||content.seo_desc;
   const btn=$('#aiApply'); btn.disabled=true; setAiStatus('正在保存…');
   try{
+    const note=activeCandidate ? 'AI 方案 '+activeCandidate+' 应用' : 'AI/手改应用';
     const r=await api('/content',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({content})});
+      body:JSON.stringify({content,note})});
     const d=await r.json().catch(()=>({}));
     if(!r.ok) throw new Error(d.error||d.detail||r.status);
     contentCache=content; contentBaseline=content;
     contentNodes().forEach(el=>{ el.classList.remove('ai-preview'); delete el.dataset.aiBefore; });
     aiEdits=null; markDirect={};
+    aiCandidates=null; activeCandidate=null; aiRejected=[];
     $('#aiDiscard').disabled=true;
-    renderMarks();
-    setAiStatus('已应用到网站，访客刷新即可看到','ok');
+    renderCandidates(); renderMarks();
+    setAiStatus(d.version ? '已应用到网站（v'+d.version+'），可在「版本历史」回滚' :
+                            '内容未变化，未生成新版本','ok');
     setContentStatus('AI 修改已保存','ok');
   }catch(e){ setAiStatus('保存失败：'+String(e.message||e).slice(0,80),'err'); btn.disabled=false; }
 }
@@ -534,8 +650,94 @@ $('#globalHint').oninput=()=>invalidatePreview();
 $('#aiRun').onclick=aiRun;
 $('#aiApply').onclick=aiApply;
 $('#aiDiscard').onclick=()=>{
-  invalidatePreview(); renderMarks(); setAiStatus('已放弃预览');
+  // 只撤销「采用」，保留候选列表，方便换一个方案重选
+  applyPreview(false); aiEdits=null; activeCandidate=null;
+  renderMarks(); renderCandidates();
+  $('#aiApply').disabled=true; $('#aiDiscard').disabled=true;
+  setAiStatus('已放弃预览，可点其它方案的「采用」重选');
 };
+/* ---- 版本历史：保存即发版，误改可回滚 ---- */
+let VER_LIST = [], verPreviewing = null;
+function setVerStatus(t, cls){ const s=$('#verStatus'); s.textContent=t; s.className='ai-status '+(cls||''); }
+
+function renderVersions(){
+  const box=$('#verList'); box.innerHTML='';
+  if(!VER_LIST.length){ box.innerHTML="<p class='hint'>还没有版本记录。保存一次文案后即可回滚。</p>"; return; }
+  VER_LIST.forEach((v,i)=>{
+    const div=document.createElement('div'); div.className='ver-item';
+    const head=document.createElement('b');
+    head.textContent='v'+v.version+(i===0?' · 最新':'')+' · '+(v.note||'保存文案');
+    const meta=document.createElement('div'); meta.className='vmeta';
+    meta.textContent=(v.created_at||'')+' · '+v.keys+' 个字段';
+    const pv=document.createElement('button'); pv.type='button'; pv.className='ver-preview';
+    pv.dataset.v=String(v.version); pv.textContent='预览这版';
+    const rb=document.createElement('button'); rb.type='button'; rb.className='ver-rollback';
+    rb.dataset.v=String(v.version); rb.textContent='回滚到此版';
+    div.appendChild(head); div.appendChild(meta); div.appendChild(pv); div.appendChild(rb);
+    box.appendChild(div);
+  });
+  // 铁律：innerHTML 重建的列表，事件绑定必须写在重建函数末尾
+  box.querySelectorAll('.ver-preview').forEach(b=>b.onclick=()=>previewVersion(Number(b.dataset.v)));
+  box.querySelectorAll('.ver-rollback').forEach(b=>b.onclick=()=>rollbackVersion(Number(b.dataset.v)));
+}
+
+async function loadVersions(){
+  try{
+    const r=await api('/content/versions');
+    const d=await r.json().catch(()=>({}));
+    if(r.status===401){ setVerStatus('管理密钥错误，请退出管理模式重新输入','err'); return; }
+    if(!r.ok) throw new Error(d.error||d.detail||r.status);
+    VER_LIST=d.versions||[]; renderVersions();
+    setVerStatus('共 '+VER_LIST.length+' 个版本','ok');
+  }catch(e){ setVerStatus('读取失败：'+String(e.message||e).slice(0,60),'err'); }
+}
+
+function backToCurrent(){
+  if(verPreviewing!==null){ applyContent(verPreviewing); verPreviewing=null; }
+  $('#verBanner').hidden=true; $('#verBack').hidden=true;
+  setVerStatus('已返回当前文案','ok');
+}
+
+function previewVersion(v){
+  const item=VER_LIST.find(x=>x.version===v); if(!item) return;
+  if(verPreviewing===null) verPreviewing=snapshotContent();
+  applyContent(item.content);
+  $('#verBanner').hidden=false;
+  $('#verBanner').textContent='正在预览 v'+v+'（未保存）';
+  $('#verBack').hidden=false;
+  setVerStatus('预览 v'+v+'，未写入数据库','ok');
+}
+
+async function rollbackVersion(v){
+  const btn=$('#verList .ver-rollback[data-v="'+v+'"]');
+  if(btn) btn.disabled=true;
+  setVerStatus('正在回滚到 v'+v+'…');
+  try{
+    const r=await api('/content/rollback',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({version:v})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.error||d.detail||r.status);
+    verPreviewing=null;
+    $('#verBanner').hidden=true; $('#verBack').hidden=true;
+    const seq=++contentLoadSeq;
+    await loadContent(seq);
+    if(seq===contentLoadSeq) contentBaseline=snapshotContent();
+    await loadVersions();
+    setVerStatus('已回滚到 v'+v+(d.version?'（生成 v'+d.version+'）':''),'ok');
+    setContentStatus('已回滚到 v'+v,'ok');
+  }catch(e){ setVerStatus('回滚失败：'+String(e.message||e).slice(0,60),'err'); }
+  finally{ if(btn) btn.disabled=false; }
+}
+
+$('#verToggle').onclick=()=>{
+  const open=$('#verPanel').hidden;
+  if(open && pickMode) setPickMode(false);
+  $('#verPanel').hidden=!open;
+  if(open) loadVersions();
+};
+$('#verClose').onclick=()=>{ $('#verPanel').hidden=true; if(verPreviewing!==null) backToCurrent(); };
+$('#verBack').onclick=backToCurrent;
+
 document.addEventListener('click', e=>{
   const el=e.target.closest && e.target.closest('[data-content-key]');
   if(!editMode || !el) return;
