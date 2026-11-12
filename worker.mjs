@@ -301,46 +301,79 @@ function cleanProduct(body) {
 
 // 批量幂等写入：一次读全表判重 + 一次 DB.batch 提交，2 个往返搞定任意条数。
 // 逐条 INSERT/UPDATE 会变成几百次往返（D1 每次往返成本高），批量发布必须走这条路。
+// 同样带「接管」：sku: 键没命中时用 nm: 键找历史行，命中就原地改写键，绝不新增。
 async function upsertMany(env, items) {
   const all = await env.DB.prepare('SELECT id, name, category, image, sku, ukey FROM products').all();
   const cur = new Map();
   for (const p of (all.results || [])) cur.set(p.ukey, p);
-  let created = 0, updated = 0, unchanged = 0;
+  let created = 0, updated = 0, unchanged = 0, adopted = 0;
   const stmts = [];
   for (const it of items) {
-    const ex = cur.get(it.ukey);
+    let ex = cur.get(it.ukey);
+    let adoptFrom = null;
+    if (!ex && it.ukey.indexOf('sku:') === 0) {
+      const legacy = productKey({ name: it.name, category: it.category });
+      const old = legacy !== it.ukey ? cur.get(legacy) : null;
+      if (old) { ex = old; adoptFrom = legacy; }
+    }
     if (!ex) {
       created++;
       // 不用 ON CONFLICT：唯一索引在「存在历史重复」时建不上，依赖它会让整批插入失败
       stmts.push(env.DB.prepare(
         "INSERT INTO products (name, category, image, sku, ukey, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'))"
       ).bind(it.name, it.category, it.image, it.sku, it.ukey));
-    } else if (ex.name !== it.name || (ex.category || '') !== it.category ||
-               ex.image !== it.image || (ex.sku || '') !== it.sku) {
+      cur.set(it.ukey, { id: -1, name: it.name, category: it.category, image: it.image,
+                         sku: it.sku, ukey: it.ukey });
+      continue;
+    }
+    const changed = ex.name !== it.name || (ex.category || '') !== it.category ||
+      ex.image !== it.image || (ex.sku || '') !== it.sku || ex.ukey !== it.ukey;
+    if (adoptFrom) {
+      // 同批里两个不同 sku 抢同一历史行时，第二个不能再接管（键已被前一个占掉）
+      if (cur.get(it.ukey)) { unchanged++; continue; }
+      adopted++;
+      cur.delete(adoptFrom);
+    }
+    if (changed) {
       updated++;
       stmts.push(env.DB.prepare(
-        "UPDATE products SET name=?, category=?, image=?, sku=?, updated_at=datetime('now') WHERE ukey=?"
-      ).bind(it.name, it.category, it.image, it.sku, it.ukey));
+        "UPDATE products SET name=?, category=?, image=?, sku=?, ukey=?, updated_at=datetime('now') WHERE ukey=?"
+      ).bind(it.name, it.category, it.image, it.sku, it.ukey, ex.ukey));
     } else unchanged++;
+    cur.set(it.ukey, { id: ex.id, name: it.name, category: it.category, image: it.image,
+                       sku: it.sku, ukey: it.ukey });
   }
   if (stmts.length) await env.DB.batch(stmts);
-  return { created, updated, unchanged };
+  return { created, updated, unchanged, adopted };
 }
 
 // 幂等写入：同一 ukey 只会有一行。created/updated/unchanged 三态回给调用方，
 // unchanged 直接不写库（重复发布同一份内容 = 零写入、零耗时、零脏数据）。
+//
+// ⚠️ 「接管」逻辑（去重能不能落地的关键）：历史行是按 nm:（名称+分类）建的键，
+// 而升级后带 sku 发布算出的是 sku: 键 —— 只按新键查会查不到 → 重复发布反而多出 149 条。
+// 所以新键没命中时，再用 nm: 键找一次，命中就把该行「接管」成 sku: 键（原地更新，不新增）。
 async function upsertProduct(env, item) {
-  const ex = await env.DB.prepare('SELECT id, name, category, image, sku FROM products WHERE ukey=?')
+  let ex = await env.DB.prepare('SELECT id, name, category, image, sku, ukey FROM products WHERE ukey=?')
     .bind(item.ukey).first();
+  let adopted = false;
+  if (!ex && item.ukey.indexOf('sku:') === 0) {
+    const legacy = productKey({ name: item.name, category: item.category });
+    if (legacy !== item.ukey) {
+      const old = await env.DB.prepare('SELECT id, name, category, image, sku, ukey FROM products WHERE ukey=?')
+        .bind(legacy).first();
+      if (old) { ex = old; adopted = true; }
+    }
+  }
   if (ex) {
     const changed = ex.name !== item.name || (ex.category || '') !== item.category ||
-      ex.image !== item.image || (ex.sku || '') !== item.sku;
+      ex.image !== item.image || (ex.sku || '') !== item.sku || ex.ukey !== item.ukey;
     if (changed) {
       await env.DB.prepare(
-        "UPDATE products SET name=?, category=?, image=?, sku=?, updated_at=datetime('now') WHERE id=?"
-      ).bind(item.name, item.category, item.image, item.sku, ex.id).run();
+        "UPDATE products SET name=?, category=?, image=?, sku=?, ukey=?, updated_at=datetime('now') WHERE id=?"
+      ).bind(item.name, item.category, item.image, item.sku, item.ukey, ex.id).run();
     }
-    return { id: ex.id, action: changed ? 'updated' : 'unchanged' };
+    return { id: ex.id, action: changed ? 'updated' : 'unchanged', adopted };
   }
   try {
     const r = await env.DB.prepare(
@@ -886,7 +919,7 @@ export default {
       try {
         await ensureProducts(env);
         const r = await upsertProduct(env, item);
-        return json({ ok: true, id: r.id, action: r.action, ukey: item.ukey });
+        return json({ ok: true, id: r.id, action: r.action, adopted: !!r.adopted, ukey: item.ukey });
       } catch (e) {
         return json({ error: 'save failed', detail: String(e && e.message || e).slice(0, 160) }, 500);
       }
@@ -917,7 +950,7 @@ export default {
         const r = await upsertMany(env, [...map.values()]);
         return json({
           ok: true, total: items.length, valid: map.size,
-          created: r.created, updated: r.updated, unchanged: r.unchanged,
+          created: r.created, updated: r.updated, unchanged: r.unchanged, adopted: r.adopted,
           errors
         });
       } catch (e) {
