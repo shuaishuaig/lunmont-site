@@ -955,6 +955,34 @@ export default {
       }
     }
 
+    // 迁移修复口（admin）：逐条执行补列并回报真实错误 + 当前列清单。
+    // 为什么单独开一个：迁移里的 try/catch 会把 D1 的具体报错吞掉，只看到「列不存在」
+    // 这种二次症状，根本判不出是 ADD COLUMN 不被支持还是默认值非法。
+    if (route === '/products/migrate' && method === 'POST') {
+      const out = { ddl: [], columns: [], flagCleared: false };
+      try {
+        await env.DB.prepare(SCHEMA).run();
+      } catch (e) { out.schemaError = String(e && e.message || e).slice(0, 160); }
+      for (const ddl of PRODUCTS_DDL) {
+        try {
+          await env.DB.prepare(ddl).run();
+          out.ddl.push({ ddl, ok: true });
+        } catch (e) {
+          out.ddl.push({ ddl, ok: false, error: String(e && e.message || e).slice(0, 160) });
+        }
+      }
+      try {
+        const c = await env.DB.prepare('PRAGMA table_info(products)').all();
+        out.columns = (c.results || []).map(x => x.name);
+      } catch (e) { out.columnsError = String(e && e.message || e).slice(0, 160); }
+      try {
+        await env.DB.prepare("DELETE FROM settings WHERE key LIKE 'products_v%'").run();
+        out.flagCleared = true;
+      } catch (e) {}
+      productsReady = false;   // 下次请求重新走迁移（补列+回填 ukey）
+      return json(out);
+    }
+
     if (route === '/products' && method === 'DELETE') {
       const id = Number(url.searchParams.get('id'));
       if (!Number.isInteger(id) || id <= 0) return json({ error: 'invalid id' }, 400);
