@@ -249,6 +249,8 @@ function applyContent(map){
   if(!map || typeof map !== 'object') return;
   contentNodes().forEach(el=>{
     const k = el.dataset.contentKey;
+    // 正处于 AI/手改预览的字段不得被异步刷新覆盖，只能由「放弃/应用」显式结束
+    if(el.classList.contains('ai-preview') || el.dataset.aiBefore !== undefined) return;
     if(Object.prototype.hasOwnProperty.call(map,k)) el.textContent = map[k];
   });
   if(Object.prototype.hasOwnProperty.call(map,'seo_title')){
@@ -464,6 +466,7 @@ function setPickMode(on){
 
 async function aiRun(){
   if(!markedKeys.length){ setAiStatus('先点页面文字加入标记','err'); return; }
+  contentLoadSeq++;   // 作废在途读取：否则它会在预览之后落地，把预览文字和 baseline 冲掉
   const directEdits=[], aiMarks=[];
   markedKeys.forEach(k=>{
     const el=nodeOf(k);
@@ -629,11 +632,13 @@ $('#editToggle').onclick=async()=>{
   setEditable(editMode && !pickMode);
   if(editMode){
     primeSeo();
+    // baseline 同步取，别等异步读取；用户一动手 input 监听会把 seq 推高，晚到响应即作废
+    contentBaseline = snapshotContent();
     setContentStatus('正在读取最新文案…');
     const seq = ++contentLoadSeq;
-    await loadContent(seq);
+    const fresh = await loadContent(seq);
     if(seq === contentLoadSeq){
-      contentBaseline = snapshotContent();
+      if(fresh) contentBaseline = snapshotContent();
       setContentStatus('点页面文字直接改，改完点「保存文案」');
     }
   } else {
