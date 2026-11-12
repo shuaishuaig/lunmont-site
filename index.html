@@ -150,6 +150,35 @@
   .ver-item .vmeta{color:var(--muted);font-size:11px;margin-top:3px}
   .ver-item button{margin-top:6px;padding:4px 9px;border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer;font-size:11px;margin-right:6px}
   .ver-item button:disabled{opacity:.45;cursor:wait}
+  /* ---- 草稿箱：保存 ≠ 发布 ---- */
+  .editbar .draft-badge{color:#ffcf7a;font-size:12px;letter-spacing:.04em}
+  .editbar .draft-badge[hidden]{display:none}
+  #draftPanel{width:400px}
+  #draftPanel[hidden]{display:none}
+  .draft-summary{font-size:12px;color:var(--muted);line-height:1.8;margin-bottom:8px}
+  .draft-summary b{color:var(--ink);font-weight:500}
+  .draft-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .draft-actions button{padding:7px 12px;border:1px solid var(--ink);background:var(--ink);color:#fffdf9;cursor:pointer;font-size:12px}
+  .draft-actions button.ghost{background:transparent;color:var(--ink)}
+  .draft-actions button:disabled{opacity:.45;cursor:wait}
+  .draft-banner{font-size:12px;color:#a33;margin-bottom:8px}
+  .draft-banner[hidden]{display:none}
+  /* ---- data-block 模块层级 + 悬停淡框 / 选中框 / 尺寸标注 ---- */
+  /* 标签走伪元素，绝不进 DOM 文本：snapshotContent() 读 innerText 不受影响 */
+  .edit-on [data-content-key]{position:relative}
+  .edit-on [data-content-key]::after{
+    content:attr(data-block-label);position:absolute;left:0;top:-20px;
+    font:11px/1.5 "PingFang SC","Microsoft YaHei",sans-serif;letter-spacing:.04em;
+    color:#6b5a3e;background:#f4e9d3;border:1px solid #e0cba2;padding:1px 6px;border-radius:3px;
+    opacity:0;pointer-events:none;white-space:nowrap;z-index:8;transition:opacity .12s;
+  }
+  .edit-on [data-content-key]:hover::after,.pick-on [data-content-key]:hover::after{opacity:1}
+  .pick-on [data-content-key].marked::after{opacity:1;color:#fff;background:#d85a30;border-color:#d85a30}
+  .edit-on [data-content-key]:hover{outline:2px solid rgba(217,164,65,.9);outline-offset:4px}
+  .pick-on [data-content-key].marked{box-shadow:0 0 0 3px rgba(216,90,48,.18)}
+  .mp-group{margin-top:10px;padding:4px 8px;background:#f6f1e8;border-left:3px solid var(--accent);
+    font-size:11px;letter-spacing:.12em;color:#6b5a3e}
+  .mp-item .mp-cur{max-width:170px}
 </style>
 </head>
 <body>
@@ -160,6 +189,9 @@
   <button type="button" id="saveContent">保存文案</button>
   <button type="button" class="ghost" id="resetContent">放弃修改</button>
   <button type="button" class="ghost" id="verToggle">版本历史</button>
+  <button type="button" class="ghost" id="draftSave">存为草稿</button>
+  <button type="button" class="ghost" id="draftToggle">草稿箱</button>
+  <span class="draft-badge" id="draftBadge" hidden>● 有草稿未发布</span>
   <span class="st" id="contentStatus"></span>
 </div>
 <div class="markpanel sans" id="markPanel" hidden>
@@ -184,7 +216,18 @@
   <div id="verList"></div>
   <div class="ai-status" id="verStatus"></div>
 </div>
-<nav>
+<div class="markpanel sans" id="draftPanel" hidden>
+  <div class="mp-head"><b>草稿箱（保存 ≠ 发布）</b><span><button type="button" id="draftBack" hidden>返回当前</button><button type="button" id="draftClose">关闭</button></span></div>
+  <div class="draft-banner" id="draftBanner" hidden></div>
+  <div class="draft-summary" id="draftSummary">读取中…</div>
+  <div class="draft-actions">
+    <button type="button" id="draftPreview" disabled>预览草稿</button>
+    <button type="button" id="draftPublish" class="ghost" disabled>发布草稿到网站</button>
+    <button type="button" id="draftDiscard" class="ghost" disabled>丢弃草稿</button>
+  </div>
+  <div class="ai-status" id="draftStatus"></div>
+</div>
+<nav data-block="nav" data-block-label="顶部导航">
   <div class="logo" data-content-key="nav_brand">LUNMONT</div>
   <div class="links sans">
     <a href="#products" data-content-key="nav_products">产品展示</a>
@@ -193,7 +236,7 @@
   </div>
 </nav>
 
-<div class="hero">
+<div class="hero" data-block="hero" data-block-label="首屏">
   <img src="assets/products/accessories/DU2101.jpg" alt="LUNMONT hair accessories">
   <div class="veil"></div>
   <div class="cap">
@@ -205,13 +248,13 @@
   </div>
 </div>
 
-<div class="stats sans">
+<div class="stats sans" data-block="stats" data-block-label="数据条">
   <div><b id="statCount">—</b><i data-content-key="stat1_label">展示产品</i></div>
   <div><b data-content-key="stat2_num">小批量</b><i data-content-key="stat2_label">灵活起订</i></div>
   <div><b data-content-key="stat3_num">出口</b><i data-content-key="stat3_label">进出口直营</i></div>
 </div>
 
-<section id="products">
+<section id="products" data-block="products" data-block-label="产品区">
   <div class="sec-head">
     <small class="sans" data-content-key="products_kicker">COLLECTIONS</small>
     <h2 data-content-key="products_title">产品系列</h2>
@@ -222,7 +265,7 @@
   <div class="grid" id="grid"></div>
 </section>
 
-<section class="admin">
+<section class="admin" data-block="admin" data-block-label="管理区">
   <h2 data-content-key="admin_title">上传产品图片</h2>
   <div class="hint sans" data-content-key="admin_hint">选择图片后自动压缩并生成产品卡片，可多选一次上传多张。产品名选填，分类决定卡片归类。</div>
   <div class="form sans">
@@ -244,14 +287,14 @@
   </div>
 </section>
 
-<section id="contact" class="contact">
+<section id="contact" class="contact" data-block="contact" data-block-label="联系区">
   <small class="sans" style="letter-spacing:.5em;color:#9a7b4f" data-content-key="contact_kicker">CONTACT</small>
   <h2 style="margin-top:14px" data-content-key="contact_title">欢迎来样订制与批发合作</h2>
   <p class="sans" data-content-key="contact_sub">义乌市玥岑进出口有限公司 · 浙江义乌</p>
   <a class="mail sans" href="mailto:info@lunmont.asia" data-content-key="contact_email">info@lunmont.asia</a>
 </section>
 
-<footer class="sans">
+<footer class="sans" data-block="footer" data-block-label="页脚">
   <div data-content-key="footer_left">© 2026 LUNMONT · 义乌市玥岑进出口有限公司</div>
   <div data-content-key="footer_right">HAIR ACCESSORIES WHOLESALE</div>
 </footer>
@@ -403,28 +446,56 @@ function nodeOf(k){ return document.querySelector('[data-content-key="'+k+'"]');
 function labelOf(k){ return FIELD_LABELS[k] || k; }
 function setAiStatus(t, cls){ const s=$('#aiStatus'); s.textContent=t; s.className='ai-status '+(cls||''); }
 
+/* data-block 模块层级：字段归属靠 closest 推断，不给每个字段重复写属性。
+   标签内容写进 data-block-label，由 CSS ::after 渲染，绝不进 DOM 文本，
+   否则 snapshotContent() 的 innerText 会被污染、把标签当成文案写进库。 */
+function blockOf(el){
+  const b = el && el.closest && el.closest('[data-block]');
+  return b ? (b.dataset.blockLabel || b.dataset.block || '页面') : '页面';
+}
+function blockLabelOf(k, el){ return blockOf(el) + ' › ' + labelOf(k); }
+function paintBlockLabels(){
+  contentNodes().forEach(el=>{
+    const r=el.getBoundingClientRect();
+    el.dataset.blockLabel = blockLabelOf(el.dataset.contentKey, el) +
+      ' · ' + Math.round(r.width) + '×' + Math.round(r.height);
+  });
+}
+
 function renderMarks(){
   const box=$('#markList'); box.innerHTML='';
   $('#markCount').textContent = markedKeys.length;
+  // 按 data-block 模块分组，组内保留用户标记顺序；分组头只做展示，不参与事件
+  const groups=[];
   markedKeys.forEach((k,i)=>{
-    const el=nodeOf(k);
-    const cur=((el && (el.innerText||el.textContent)) || '').replace(/\s+/g,' ').trim();
-    const div=document.createElement('div'); div.className='mp-item';
-    const name=document.createElement('div'); name.className='mp-name';
-    const idx=document.createElement('span'); idx.className='idx'; idx.textContent=String(i+1);
-    const lab=document.createElement('span'); lab.textContent=labelOf(k);
-    const curEl=document.createElement('span'); curEl.className='mp-cur';
-    curEl.title=cur; curEl.textContent='当前：'+cur;
-    const del=document.createElement('button'); del.type='button'; del.className='mp-del';
-    del.dataset.key=k; del.textContent='移除';
-    name.appendChild(idx); name.appendChild(lab); name.appendChild(curEl); name.appendChild(del);
-    const direct=document.createElement('input'); direct.className='mp-direct'; direct.dataset.key=k;
-    direct.placeholder='直接改成（手改，不走 AI）'; direct.value=markDirect[k]||'';
-    const hint=document.createElement('input'); hint.className='mp-hint'; hint.dataset.key=k;
-    hint.placeholder='或写提示词让 AI 改（留空用统一提示词）'; hint.value=markHints[k]||'';
-    const prev=document.createElement('div'); prev.className='mp-preview'; prev.dataset.key=k;
-    div.appendChild(name); div.appendChild(direct); div.appendChild(hint); div.appendChild(prev);
-    box.appendChild(div);
+    const g=blockOf(nodeOf(k));
+    let grp=groups.find(x=>x.name===g);
+    if(!grp){ grp={name:g, items:[]}; groups.push(grp); }
+    grp.items.push({k,i});
+  });
+  groups.forEach(grp=>{
+    const gh=document.createElement('div'); gh.className='mp-group'; gh.textContent=grp.name;
+    box.appendChild(gh);
+    grp.items.forEach(({k,i})=>{
+      const el=nodeOf(k);
+      const cur=((el && (el.innerText||el.textContent)) || '').replace(/\s+/g,' ').trim();
+      const div=document.createElement('div'); div.className='mp-item';
+      const name=document.createElement('div'); name.className='mp-name';
+      const idx=document.createElement('span'); idx.className='idx'; idx.textContent=String(i+1);
+      const lab=document.createElement('span'); lab.textContent=labelOf(k);
+      const curEl=document.createElement('span'); curEl.className='mp-cur';
+      curEl.title=cur; curEl.textContent='当前：'+cur;
+      const del=document.createElement('button'); del.type='button'; del.className='mp-del';
+      del.dataset.key=k; del.textContent='移除';
+      name.appendChild(idx); name.appendChild(lab); name.appendChild(curEl); name.appendChild(del);
+      const direct=document.createElement('input'); direct.className='mp-direct'; direct.dataset.key=k;
+      direct.placeholder='直接改成（手改，不走 AI）'; direct.value=markDirect[k]||'';
+      const hint=document.createElement('input'); hint.className='mp-hint'; hint.dataset.key=k;
+      hint.placeholder='或写提示词让 AI 改（留空用统一提示词）'; hint.value=markHints[k]||'';
+      const prev=document.createElement('div'); prev.className='mp-preview'; prev.dataset.key=k;
+      div.appendChild(name); div.appendChild(direct); div.appendChild(hint); div.appendChild(prev);
+      box.appendChild(div);
+    });
   });
   // 铁律：innerHTML 重建的列表，事件绑定必须写在重建函数末尾
   box.querySelectorAll('.mp-del').forEach(b=>b.onclick=()=>{ toggleMark(b.dataset.key); });
@@ -729,9 +800,150 @@ async function rollbackVersion(v){
   finally{ if(btn) btn.disabled=false; }
 }
 
+/* ---- 草稿箱：保存 ≠ 发布。存草稿只写 D1 content_drafts，
+       只有「发布草稿到网站」才写 site_content 并生成版本快照。
+       原有「保存文案」按钮行为保持「保存即发布」不变，用户习惯不被改变。 ---- */
+let DRAFT = null, draftPreviewing = null, draftLoadSeq = 0;
+function setDraftStatus(t, cls){ const s=$('#draftStatus'); s.textContent=t; s.className='ai-status '+(cls||''); }
+function setDraftBadge(on){ $('#draftBadge').hidden=!on; }
+function draftBack(){
+  if(draftPreviewing!==null){ applyContent(draftPreviewing); draftPreviewing=null; }
+  $('#draftBanner').hidden=true; $('#draftBack').hidden=true;
+  setDraftStatus('已返回当前文案','ok');
+}
+function closeDraftPreview(){
+  $('#draftPanel').hidden=true;
+  if(draftPreviewing!==null) draftBack();
+}
+
+function renderDraft(){
+  const has=!!DRAFT;
+  const box=$('#draftSummary'); box.innerHTML='';
+  if(!has){
+    box.textContent='还没有草稿。改完页面文字点「存为草稿」，确认后可在草稿箱里发布。';
+  } else {
+    const b=document.createElement('b'); b.textContent='有 1 份未发布草稿';
+    const l1=document.createElement('div'); l1.textContent='保存时间：'+(DRAFT.updated_at||'—');
+    const l2=document.createElement('div'); l2.textContent='备注：'+(DRAFT.note||'—');
+    const l3=document.createElement('div'); l3.textContent='字段数：'+Object.keys(DRAFT.content||{}).length;
+    box.appendChild(b); box.appendChild(l1); box.appendChild(l2); box.appendChild(l3);
+  }
+  $('#draftPreview').disabled=!has;
+  $('#draftPublish').disabled=!has;
+  $('#draftDiscard').disabled=!has;
+  setDraftBadge(has);
+}
+
+async function loadDraft(){
+  const seq=++draftLoadSeq;
+  try{
+    const r=await api('/content/draft');
+    const d=await r.json().catch(()=>({}));
+    if(r.status===401){ setDraftStatus('管理密钥错误，请退出管理模式重新输入','err'); return; }
+    if(!r.ok) throw new Error(d.error||d.detail||r.status);
+    if(seq!==draftLoadSeq) return;   // 陈旧响应：不覆盖用户刚存/刚丢弃的草稿状态
+    DRAFT=d.hasDraft ? d.draft : null;
+    renderDraft();
+    setDraftStatus(DRAFT ? '草稿未发布，访客看到的仍是当前线上文案' : '暂无草稿','ok');
+  }catch(e){ setDraftStatus('读取失败：'+String(e.message||e).slice(0,60),'err'); }
+}
+
+async function saveDraft(){
+  if(document.querySelectorAll('.ai-preview').length){
+    setContentStatus('请先「应用到网站」或「放弃预览」，再存草稿','err'); return;
+  }
+  contentLoadSeq++;   // 作废在途读取，别让晚到的 /api/content 冲掉草稿现场
+  const content=snapshotContent();
+  content.seo_title=$('#seoTitle').value.trim()||content.seo_title;
+  content.seo_desc=$('#seoDesc').value.trim()||content.seo_desc;
+  const btn=$('#draftSave'); btn.disabled=true;
+  try{
+    const r=await api('/content/draft',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({content,note:'手动存为草稿'})});
+    const d=await r.json().catch(()=>({}));
+    if(r.status===401) throw new Error('管理密钥错误，请退出管理模式重新输入');
+    if(!r.ok) throw new Error(d.error||d.detail||r.status);
+    draftLoadSeq++;
+    DRAFT={content,note:'手动存为草稿',updated_at:'刚刚'};
+    renderDraft();
+    setContentStatus('已存为草稿（未发布，访客看到的仍是原文）','ok');
+    setDraftStatus('草稿已保存，可在草稿箱里预览/发布','ok');
+  }catch(e){ setContentStatus('存草稿失败：'+String(e.message||e).slice(0,70),'err'); }
+  finally{ btn.disabled=false; }
+}
+
+function previewDraft(){
+  if(!DRAFT) return;
+  if(verPreviewing!==null) backToCurrent();
+  if(draftPreviewing===null) draftPreviewing=snapshotContent();
+  applyContent(DRAFT.content);
+  $('#draftBanner').hidden=false;
+  $('#draftBanner').textContent='正在预览草稿（未发布）';
+  $('#draftBack').hidden=false;
+  setDraftStatus('预览草稿，未写入数据库','ok');
+}
+
+async function publishDraft(){
+  if(!DRAFT) return;
+  if(!confirm('发布草稿会立刻改变访客看到的文案，确定发布？')) return;
+  const btn=$('#draftPublish'); btn.disabled=true;
+  setDraftStatus('正在发布草稿…');
+  try{
+    const r=await api('/content/publish',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({note:'草稿发布'})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.error||d.detail||r.status);
+    draftPreviewing=null;
+    $('#draftBanner').hidden=true; $('#draftBack').hidden=true;
+    const seq=++contentLoadSeq;
+    await loadContent(seq);
+    if(seq===contentLoadSeq) contentBaseline=snapshotContent();
+    draftLoadSeq++;
+    DRAFT=null; renderDraft();
+    await loadVersions();
+    setDraftStatus(d.version ? '已发布（v'+d.version+'），可在「版本历史」回滚' : '内容未变化，草稿已清空','ok');
+    setContentStatus('草稿已发布','ok');
+  }catch(e){ setDraftStatus('发布失败：'+String(e.message||e).slice(0,70),'err'); btn.disabled=false; }
+}
+
+async function discardDraft(){
+  if(!DRAFT) return;
+  if(!confirm('确定丢弃这份草稿？')) return;
+  try{
+    const r=await api('/content/draft',{method:'DELETE'});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.error||d.detail||r.status);
+    if(draftPreviewing!==null) draftBack();
+    draftLoadSeq++;
+    DRAFT=null; renderDraft();
+    setDraftStatus('草稿已丢弃','ok');
+  }catch(e){ setDraftStatus('丢弃失败：'+String(e.message||e).slice(0,70),'err'); }
+}
+
+$('#draftSave').onclick=saveDraft;
+$('#draftToggle').onclick=()=>{
+  const open=$('#draftPanel').hidden;
+  if(open){
+    if(pickMode) setPickMode(false);
+    $('#verPanel').hidden=true;
+    if(verPreviewing!==null) backToCurrent();
+  }
+  $('#draftPanel').hidden=!open;
+  if(open) loadDraft();
+};
+$('#draftClose').onclick=closeDraftPreview;
+$('#draftBack').onclick=draftBack;
+$('#draftPreview').onclick=previewDraft;
+$('#draftPublish').onclick=publishDraft;
+$('#draftDiscard').onclick=discardDraft;
+
+/* 草稿箱与版本历史互斥，同时只预览一个，避免两个 baseline 互相覆盖 */
 $('#verToggle').onclick=()=>{
   const open=$('#verPanel').hidden;
-  if(open && pickMode) setPickMode(false);
+  if(open){
+    if(pickMode) setPickMode(false);
+    closeDraftPreview();
+  }
   $('#verPanel').hidden=!open;
   if(open) loadVersions();
 };
@@ -834,6 +1046,8 @@ $('#editToggle').onclick=async()=>{
   setEditable(editMode && !pickMode);
   if(editMode){
     primeSeo();
+    paintBlockLabels();
+    loadDraft();
     // baseline 同步取，别等异步读取；用户一动手 input 监听会把 seq 推高，晚到响应即作废
     contentBaseline = snapshotContent();
     setContentStatus('正在读取最新文案…');
@@ -845,11 +1059,27 @@ $('#editToggle').onclick=async()=>{
     }
   } else {
     contentLoadSeq++;
+    closeDraftPreview();
+    $('#verPanel').hidden=true;
+    if(verPreviewing!==null) backToCurrent();
+    draftLoadSeq++;
+    DRAFT=null; renderDraft();
     if(contentBaseline) applyContent(contentBaseline);
     setContentStatus('');
   }
   load();
 };
+
+/* 悬停时刷新尺寸标注；标签走 data-block-label 伪元素，绝不进 innerText */
+document.addEventListener('mouseover', e=>{
+  if(!editMode) return;
+  const el=e.target.closest && e.target.closest('[data-content-key]');
+  if(!el) return;
+  const r=el.getBoundingClientRect();
+  el.dataset.blockLabel=blockLabelOf(el.dataset.contentKey, el)+' · '+
+    Math.round(r.width)+'×'+Math.round(r.height);
+}, true);
+window.addEventListener('resize', ()=>{ if(editMode) paintBlockLabels(); });
 
 load();
 loadContent();
