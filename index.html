@@ -179,6 +179,25 @@
   .mp-group{margin-top:10px;padding:4px 8px;background:#f6f1e8;border-left:3px solid var(--accent);
     font-size:11px;letter-spacing:.12em;color:#6b5a3e}
   .mp-item .mp-cur{max-width:170px}
+  /* ---- 文字样式面板：字号 / 字重 / 颜色 / 对齐 / 行高 / 字距 / 字体 ---- */
+  #stylePanel{width:344px}
+  #stylePanel[hidden]{display:none}
+  .sp-target{font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6}
+  .sp-target b{color:var(--ink);font-weight:500}
+  .sp-row{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+  .sp-row>label{flex:0 0 48px;font-size:12px;color:var(--muted)}
+  .sp-row input[type=range]{flex:1;accent-color:#d9a441;min-width:0}
+  .sp-row select{flex:1;padding:6px 8px;border:1px solid #cfc6b8;background:#fff;font-size:12px;min-width:0}
+  .sp-row input[type=color]{width:34px;height:26px;padding:0;border:1px solid #cfc6b8;background:#fff;cursor:pointer}
+  .sp-row .val{flex:0 0 48px;text-align:right;font-size:11px;color:var(--muted)}
+  .sp-colors{display:flex;gap:5px;flex-wrap:wrap}
+  .sp-colors button{width:20px;height:20px;border:1px solid #cfc6b8;border-radius:50%;cursor:pointer;padding:0}
+  .sp-colors button.on{box-shadow:0 0 0 2px #d9a441}
+  .sp-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+  .sp-actions button{padding:7px 12px;border:1px solid var(--ink);background:var(--ink);color:#fffdf9;cursor:pointer;font-size:12px}
+  .sp-actions button.ghost{background:transparent;color:var(--ink)}
+  .sp-actions button:disabled{opacity:.45;cursor:wait}
+  .sp-hint{font-size:11px;color:#8a7a60;margin-top:8px;line-height:1.6}
 </style>
 </head>
 <body>
@@ -191,6 +210,7 @@
   <button type="button" class="ghost" id="verToggle">版本历史</button>
   <button type="button" class="ghost" id="draftSave">存为草稿</button>
   <button type="button" class="ghost" id="draftToggle">草稿箱</button>
+  <button type="button" class="ghost" id="styleToggle">文字样式</button>
   <span class="draft-badge" id="draftBadge" hidden>● 有草稿未发布</span>
   <span class="st" id="contentStatus"></span>
 </div>
@@ -226,6 +246,34 @@
     <button type="button" id="draftDiscard" class="ghost" disabled>丢弃草稿</button>
   </div>
   <div class="ai-status" id="draftStatus"></div>
+</div>
+<div class="markpanel sans" id="stylePanel" hidden>
+  <div class="mp-head"><b>文字样式</b><span><button type="button" id="spClose">关闭</button></span></div>
+  <div class="sp-target" id="spTarget">点页面上任意文字，选中后调样式</div>
+  <div class="sp-row"><label>字号</label><input type="range" id="spSize" min="8" max="120" step="1"><span class="val" id="spSizeVal">—</span></div>
+  <div class="sp-row"><label>字重</label>
+    <select id="spWeight">
+      <option value="">默认</option><option value="300">细 300</option><option value="400">常规 400</option>
+      <option value="500">中等 500</option><option value="600">半粗 600</option><option value="700">粗 700</option>
+      <option value="800">特粗 800</option>
+    </select>
+  </div>
+  <div class="sp-row"><label>颜色</label><input type="color" id="spColor" value="#0f0e0c"><div class="sp-colors" id="spSwatches"></div></div>
+  <div class="sp-row"><label>对齐</label>
+    <select id="spAlign"><option value="">默认</option><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select>
+  </div>
+  <div class="sp-row"><label>行高</label><input type="range" id="spLine" min="0.8" max="2.5" step="0.05"><span class="val" id="spLineVal">—</span></div>
+  <div class="sp-row"><label>字距</label><input type="range" id="spSpace" min="-0.05" max="0.5" step="0.01"><span class="val" id="spSpaceVal">—</span></div>
+  <div class="sp-row"><label>字体</label>
+    <select id="spFamily"><option value="">默认</option><option value="serif">宋体 / 衬线</option><option value="sans">黑体 / 无衬线</option></select>
+  </div>
+  <div class="sp-actions">
+    <button type="button" id="spSave">保存样式</button>
+    <button type="button" id="spReset" class="ghost">重置此字段</button>
+    <button type="button" id="spDiscard" class="ghost">放弃改动</button>
+  </div>
+  <div class="sp-hint">样式保存后立即对访客生效，独立于文案的草稿 / 版本回滚。</div>
+  <div class="ai-status" id="spStatus"></div>
 </div>
 <nav data-block="nav" data-block-label="顶部导航">
   <div class="logo" data-content-key="nav_brand">LUNMONT</div>
@@ -950,11 +998,183 @@ $('#verToggle').onclick=()=>{
 $('#verClose').onclick=()=>{ $('#verPanel').hidden=true; if(verPreviewing!==null) backToCurrent(); };
 $('#verBack').onclick=backToCurrent;
 
+/* ---- 文字样式：字号 / 字重 / 颜色 / 对齐 / 行高 / 字距 / 字体 ----
+   实现口径：不改 DOM 结构、不写 inline style，只生成一条 <style> 规则。
+   这样 contenteditable 的 innerText 与 snapshotContent() 完全不受影响，
+   也不会把样式值误当文案存进 site_content。 */
+const FONT_STACKS = {
+  serif: '"Noto Serif SC","Songti SC",Georgia,serif',
+  sans: '"PingFang SC","Microsoft YaHei",sans-serif'
+};
+const SP_SWATCHES = ['#0f0e0c','#5f5e5a','#9a7b4f','#b03a2e','#1d6f42','#1f4e79','#ffffff','#d9a441'];
+let styleLive = {}, styleDraft = {}, styleTarget = null, styleLoadSeq = 0;
+
+function spStatus(t, cls){ const s=$('#spStatus'); s.textContent=t; s.className='ai-status '+(cls||''); }
+function cloneStyles(o){ return JSON.parse(JSON.stringify(o||{})); }
+
+function buildStyleCss(map){
+  let out='';
+  Object.keys(map||{}).forEach(k=>{
+    const s=map[k]||{}; const d=[];
+    if(s.fontSize) d.push('font-size:'+Number(s.fontSize)+'px');
+    if(s.fontWeight) d.push('font-weight:'+Number(s.fontWeight));
+    if(s.color) d.push('color:'+s.color);
+    if(s.align) d.push('text-align:'+s.align);
+    if(s.lineHeight) d.push('line-height:'+Number(s.lineHeight));
+    if(s.letterSpacing!==undefined && s.letterSpacing!=='') d.push('letter-spacing:'+Number(s.letterSpacing)+'em');
+    if(s.fontFamily && FONT_STACKS[s.fontFamily]) d.push('font-family:'+FONT_STACKS[s.fontFamily]);
+    if(d.length) out+='[data-content-key="'+k+'"]{'+d.join(';')+'}\n';
+  });
+  return out;
+}
+
+function applyStyles(map){
+  let tag=document.getElementById('liveStyles');
+  if(!tag){ tag=document.createElement('style'); tag.id='liveStyles'; document.head.appendChild(tag); }
+  tag.textContent=buildStyleCss(map);
+}
+
+async function loadStyles(){
+  const seq=++styleLoadSeq;
+  try{
+    const r=await fetch('/api/styles',{credentials:'same-origin'});
+    if(!r.ok) return;
+    const d=await r.json();
+    if(seq!==styleLoadSeq) return;   // 陈旧响应：别盖掉用户正在调 / 刚保存的样式
+    styleLive=d.styles||{};
+    styleDraft=cloneStyles(styleLive);
+    applyStyles(styleLive);
+  }catch(e){}
+}
+
+function rgbToHex(v){
+  const m=String(v||'').match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if(!m) return /^#[0-9a-f]{6}$/i.test(v||'')?v:'#0f0e0c';
+  return '#'+[1,2,3].map(i=>Number(m[i]).toString(16).padStart(2,'0')).join('');
+}
+
+function spStyle(){ return (styleTarget && styleDraft[styleTarget]) || {}; }
+
+function setStyleProp(p, v){
+  if(!styleTarget) return;
+  styleLoadSeq++;   // 有本地改动后，在途 loadStyles 一律作废
+  const o=Object.assign({}, styleDraft[styleTarget]||{});
+  if(v===''||v===null||v===undefined) delete o[p]; else o[p]=v;
+  if(Object.keys(o).length) styleDraft[styleTarget]=o; else delete styleDraft[styleTarget];
+  applyStyles(styleDraft);
+  spStatus(JSON.stringify(styleDraft)===JSON.stringify(styleLive)?'样式未改动':'有未保存的样式改动','');
+}
+
+function renderSwatches(){
+  const box=$('#spSwatches'); box.innerHTML='';
+  const cur=String(spStyle().color||'').toLowerCase();
+  SP_SWATCHES.forEach(c=>{
+    const b=document.createElement('button'); b.type='button'; b.style.background=c;
+    b.dataset.c=c; b.title=c;
+    if(c.toLowerCase()===cur) b.classList.add('on');
+    box.appendChild(b);
+  });
+  // 铁律：innerHTML 重建的列表，事件绑定写在重建函数末尾
+  box.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    $('#spColor').value=b.dataset.c;
+    setStyleProp('color',b.dataset.c);
+    renderSwatches();
+  });
+}
+
+function syncStylePanel(){
+  const s=spStyle();
+  const box=$('#spTarget'); box.innerHTML='';
+  if(styleTarget){
+    const b=document.createElement('b'); b.textContent=labelOf(styleTarget);
+    const t=document.createElement('span');
+    t.textContent=' · '+blockOf(nodeOf(styleTarget))+' · '+styleTarget;
+    box.appendChild(b); box.appendChild(t);
+  } else box.textContent='点页面上任意文字，选中后调样式';
+  const el=styleTarget?nodeOf(styleTarget):null;
+  const cs=el?getComputedStyle(el):null;
+  const size=s.fontSize||(cs?Math.round(parseFloat(cs.fontSize)):16);
+  $('#spSize').value=size; $('#spSizeVal').textContent=size+'px';
+  $('#spWeight').value=s.fontWeight||'';
+  $('#spColor').value=(s.color&&/^#[0-9a-f]{6}$/i.test(s.color))?s.color:(cs?rgbToHex(cs.color):'#0f0e0c');
+  $('#spAlign').value=s.align||'';
+  const lh=s.lineHeight||(cs?(Math.round(parseFloat(cs.lineHeight)/parseFloat(cs.fontSize)*100)/100||1.7):1.7);
+  $('#spLine').value=Math.min(2.5,Math.max(0.8,Number(lh)));
+  $('#spLineVal').textContent=Number($('#spLine').value).toFixed(2);
+  const sp=(s.letterSpacing!==undefined&&s.letterSpacing!=='')?Number(s.letterSpacing)
+           :(cs?(Math.round(parseFloat(cs.letterSpacing||0)/parseFloat(cs.fontSize)*1000)/1000||0):0);
+  $('#spSpace').value=Math.min(0.5,Math.max(-0.05,sp));
+  $('#spSpaceVal').textContent=Number($('#spSpace').value).toFixed(2)+'em';
+  $('#spFamily').value=s.fontFamily||'';
+  renderSwatches();
+}
+
+function openStylePanel(k){
+  styleTarget=k;
+  $('#stylePanel').hidden=false;
+  styleLoadSeq++;   // 选中即视为开始编辑，作废在途读取
+  syncStylePanel();
+  spStatus('');
+}
+
+async function saveStyles(){
+  styleLoadSeq++;
+  const btn=$('#spSave'); btn.disabled=true;
+  try{
+    const r=await api('/styles',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({styles:styleDraft})});
+    const d=await r.json().catch(()=>({}));
+    if(r.status===401) throw new Error('管理密钥错误，请退出管理模式重新输入');
+    if(!r.ok) throw new Error(d.error||d.detail||r.status);
+    styleLive=cloneStyles(styleDraft);
+    applyStyles(styleLive);
+    spStatus('样式已保存（'+(d.keys||0)+' 个字段），访客刷新即可看到','ok');
+  }catch(e){ spStatus('保存失败：'+String(e.message||e).slice(0,80),'err'); }
+  finally{ btn.disabled=false; }
+}
+
+$('#spSize').oninput=()=>{ $('#spSizeVal').textContent=$('#spSize').value+'px'; setStyleProp('fontSize',$('#spSize').value); };
+$('#spLine').oninput=()=>{ $('#spLineVal').textContent=Number($('#spLine').value).toFixed(2); setStyleProp('lineHeight',$('#spLine').value); };
+$('#spSpace').oninput=()=>{ $('#spSpaceVal').textContent=Number($('#spSpace').value).toFixed(2)+'em'; setStyleProp('letterSpacing',$('#spSpace').value); };
+$('#spWeight').onchange=()=>setStyleProp('fontWeight',$('#spWeight').value);
+$('#spAlign').onchange=()=>setStyleProp('align',$('#spAlign').value);
+$('#spFamily').onchange=()=>setStyleProp('fontFamily',$('#spFamily').value);
+$('#spColor').oninput=()=>{ setStyleProp('color',$('#spColor').value); renderSwatches(); };
+$('#spSave').onclick=saveStyles;
+$('#spReset').onclick=()=>{
+  if(!styleTarget) return;
+  styleLoadSeq++;
+  delete styleDraft[styleTarget];
+  applyStyles(styleDraft);
+  syncStylePanel();
+  spStatus('已重置该字段（点「保存样式」生效）','');
+};
+$('#spDiscard').onclick=()=>{
+  styleDraft=cloneStyles(styleLive);
+  applyStyles(styleLive);
+  syncStylePanel();
+  spStatus('已放弃未保存的样式改动','ok');
+};
+$('#spClose').onclick=()=>{ $('#stylePanel').hidden=true; };
+$('#styleToggle').onclick=()=>{
+  const on=$('#stylePanel').hidden;
+  if(on){
+    if(pickMode) setPickMode(false);
+    $('#verPanel').hidden=true;
+    closeDraftPreview();
+  }
+  $('#stylePanel').hidden=!on;
+  if(on) loadStyles();
+  if(on && !styleTarget) spStatus('点页面上任意文字，选中后可调字号 / 颜色 / 对齐','');
+};
+
 document.addEventListener('click', e=>{
   const el=e.target.closest && e.target.closest('[data-content-key]');
   if(!editMode || !el) return;
   e.preventDefault();
-  if(pickMode) toggleMark(el.dataset.contentKey);
+  if(pickMode){ toggleMark(el.dataset.contentKey); return; }
+  // 样式面板开着时，点谁就调谁；关着不打扰正常改字
+  if(!$('#stylePanel').hidden) openStylePanel(el.dataset.contentKey);
 }, true);
 // 用户一旦开始敲字，进入管理模式时的在途读取即作废，避免晚到的响应冲掉未保存内容
 document.addEventListener('input', e=>{
@@ -1062,6 +1282,9 @@ $('#editToggle').onclick=async()=>{
     closeDraftPreview();
     $('#verPanel').hidden=true;
     if(verPreviewing!==null) backToCurrent();
+    // 退出管理模式：样式面板收起，未保存的样式改动一律丢弃（基线 = 已保存版本）
+    $('#stylePanel').hidden=true;
+    styleDraft=cloneStyles(styleLive); applyStyles(styleLive); styleTarget=null;
     draftLoadSeq++;
     DRAFT=null; renderDraft();
     if(contentBaseline) applyContent(contentBaseline);
@@ -1083,6 +1306,8 @@ window.addEventListener('resize', ()=>{ if(editMode) paintBlockLabels(); });
 
 load();
 loadContent();
+// 访客也要应用自定义样式：样式是公开只读接口
+loadStyles();
 </script>
 </body>
 </html>
