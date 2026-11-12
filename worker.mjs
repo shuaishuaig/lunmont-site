@@ -49,6 +49,26 @@ const DRAFT_SCHEMA = `CREATE TABLE IF NOT EXISTS content_drafts (
   PRIMARY KEY (page, locale)
 )`;
 
+// 文字样式覆盖层：每个文案字段可选一组白名单属性。
+// 关键安全口径：绝不接受任意 CSS 字符串，只按属性白名单 + 值格式逐项校验，
+// 前端也不拼 style 属性，而是生成一条 <style> 规则（不进 DOM 文本，不污染 innerText）。
+const STYLES_SCHEMA = `CREATE TABLE IF NOT EXISTS content_styles (
+  key TEXT PRIMARY KEY,
+  css_json TEXT NOT NULL,
+  updated_at TEXT DEFAULT (datetime('now'))
+)`;
+
+const STYLE_PROPS = {
+  fontSize: v => Number.isInteger(Number(v)) && Number(v) >= 8 && Number(v) <= 120,
+  fontWeight: v => ['300', '400', '500', '600', '700', '800'].indexOf(String(v)) >= 0,
+  color: v => /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(String(v)) ||
+              /^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(?:,\s*(?:0|1|0?\.\d{1,3})\s*)?\)$/.test(String(v)),
+  align: v => ['left', 'center', 'right'].indexOf(String(v)) >= 0,
+  lineHeight: v => Number(v) >= 0.8 && Number(v) <= 2.5,
+  letterSpacing: v => Number(v) >= -0.05 && Number(v) <= 0.5,
+  fontFamily: v => ['serif', 'sans'].indexOf(String(v)) >= 0
+};
+
 // AI 文案编辑：密钥只存 D1 settings，绝不进公开仓库；AI 只返回数据，永不返回代码。
 // 品牌词库 / 历史语气样本 / 禁用词本机没有，就不硬编（文档禁止代理自己编文案素材）。
 const AI_SYS_PROMPT = `你是网站文案编辑。输入包含页面 slug、语言 locale、若干字段（key / 中文名 / 当前文本 / 单条提示词 / maxLen 字数上限），以及一条全局提示词。
@@ -251,6 +271,28 @@ function cleanContentInput(c) {
   return clean;
 }
 
+// 样式校验：key 必须是默认文案白名单字段；属性与值逐项过白名单，任一非法即整体拒绝。
+function cleanStyles(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  const allowed = Object.keys(DEFAULT_CONTENT);
+  const keys = Object.keys(input);
+  if (keys.length > 60) return null;
+  const out = {};
+  for (const k of keys) {
+    if (allowed.indexOf(k) < 0) return null;
+    const s = input[k];
+    if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
+    const o = {};
+    for (const p of Object.keys(s)) {
+      if (!Object.prototype.hasOwnProperty.call(STYLE_PROPS, p)) return null;
+      if (!STYLE_PROPS[p](s[p])) return null;
+      o[p] = String(s[p]).slice(0, 40);
+    }
+    if (Object.keys(o).length) out[k] = o;
+  }
+  return out;
+}
+
 async function readDraft(env) {
   await env.DB.prepare(DRAFT_SCHEMA).run();
   const row = await env.DB.prepare(
@@ -304,6 +346,24 @@ export default {
       }
     }
 
+    if (route === '/styles' && method === 'GET') {
+      // 样式必须对访客公开可读：访客加载首页就要应用，否则刷新后看不到自定义样式
+      try {
+        await env.DB.prepare(STYLES_SCHEMA).run();
+        const r = await env.DB.prepare('SELECT key, css_json FROM content_styles').all();
+        const styles = {};
+        for (const row of (r.results || [])) {
+          try {
+            const o = JSON.parse(row.css_json);
+            if (o && typeof o === 'object' && !Array.isArray(o)) styles[row.key] = o;
+          } catch (e) { /* 坏行忽略，绝不影响整页 */ }
+        }
+        return json({ styles });
+      } catch (e) {
+        return json({ styles: {} });
+      }
+    }
+
     if (route === '/ai-status' && method === 'GET') {
       try {
         const cfg = await readAIConfig(env);
@@ -350,6 +410,36 @@ export default {
 
     if (method === 'POST' || method === 'DELETE') {
       if (!(await checkAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
+    }
+
+    if (route === '/styles' && method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+      const clean = cleanStyles(body && body.styles);
+      if (!clean) return json({ error: 'invalid styles' }, 400);
+      try {
+        await env.DB.prepare(STYLES_SCHEMA).run();
+        await env.DB.prepare('DELETE FROM content_styles').run();
+        const keys = Object.keys(clean);
+        for (const k of keys) {
+          await env.DB.prepare(
+            "INSERT INTO content_styles (key, css_json, updated_at) VALUES (?, ?, datetime('now'))"
+          ).bind(k, JSON.stringify(clean[k])).run();
+        }
+        return json({ ok: true, keys: keys.length });
+      } catch (e) {
+        return json({ error: 'styles save failed', detail: String(e && e.message || e).slice(0, 200) }, 500);
+      }
+    }
+
+    if (route === '/styles' && method === 'DELETE') {
+      try {
+        await env.DB.prepare(STYLES_SCHEMA).run();
+        await env.DB.prepare('DELETE FROM content_styles').run();
+        return json({ ok: true });
+      } catch (e) {
+        return json({ error: 'styles reset failed', detail: String(e && e.message || e).slice(0, 200) }, 500);
+      }
     }
 
     if (route === '/content/draft' && method === 'POST') {
