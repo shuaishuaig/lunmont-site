@@ -18,6 +18,39 @@ const CONTENT_SCHEMA = `CREATE TABLE IF NOT EXISTS site_content (
   updated_at TEXT DEFAULT (datetime('now'))
 )`;
 
+const SETTINGS_SCHEMA = `CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL DEFAULT ''
+)`;
+
+// AI 文案编辑：密钥只存 D1 settings，绝不进公开仓库；提示词约束模型只回纯文本 JSON。
+const AI_SYS_PROMPT = `你是网站文案编辑。用户给出若干网页文案字段（key / 中文名 / 当前文本 / 单条提示词），以及一条全局提示词。
+要求：
+1. 只改文字，不输出 HTML、Markdown、解释或额外内容。
+2. 严格返回 JSON 对象：键必须是给出的 key，值是修改后的纯文本字符串。
+3. 没有对应提示词的字段保持原文，也要在 JSON 中原样返回。
+4. 保持原文语言与大致长度；不要新增键、不要删键、不要输出数组。
+5. 若提示词要求调整语气/风格，只改措辞，不编造公司名、电话、邮箱等事实信息。`;
+
+async function readAIConfig(env) {
+  const r = await env.DB.prepare(
+    "SELECT key, value FROM settings WHERE key IN ('ai_key','ai_base','ai_model')"
+  ).all();
+  const cfg = {};
+  for (const row of (r.results || [])) cfg[row.key] = row.value;
+  return cfg;
+}
+
+function parseAIJson(txt) {
+  const t = (txt || '').trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '')
+    .trim();
+  const m = t.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  try { return JSON.parse(m[0]); } catch (e) { return null; }
+}
+
 // Keep in sync with the [data-content-key] skeleton in index.html.
 // First request after deploy seeds these idempotently; no console/DDL step needed.
 const DEFAULT_CONTENT = {
@@ -112,8 +145,105 @@ export default {
       }
     }
 
+    if (route === '/ai-status' && method === 'GET') {
+      try {
+        const cfg = await readAIConfig(env);
+        // 只回「是否已配置」，绝不回密钥本身
+        return json({ configured: !!cfg.ai_key, base: cfg.ai_base || '', model: cfg.ai_model || '' });
+      } catch (e) {
+        return json({ configured: false });
+      }
+    }
+
     if (method === 'POST' || method === 'DELETE') {
       if (!(await checkAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
+    }
+
+    if (route === '/ai-config' && method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+      const aiKey = String((body && body.aiKey) || '').trim();
+      const base = String((body && body.aiBase) || 'https://api.deepseek.com')
+        .trim().replace(/\/+$/, '');
+      const model = String((body && body.aiModel) || 'deepseek-chat').trim();
+      if (!aiKey) return json({ error: 'aiKey required' }, 400);
+      if (!/^https:\/\/[^\s]{1,180}$/.test(base)) return json({ error: 'bad aiBase' }, 400);
+      if (!/^[\w.\-:]{1,80}$/.test(model)) return json({ error: 'bad aiModel' }, 400);
+      try {
+        await env.DB.prepare(SETTINGS_SCHEMA).run();
+        const sql = `INSERT INTO settings (key, value) VALUES (?, ?), (?, ?), (?, ?)
+          ON CONFLICT(key) DO UPDATE SET value=excluded.value`;
+        await env.DB.prepare(sql)
+          .bind('ai_key', aiKey, 'ai_base', base, 'ai_model', model).run();
+        return json({ ok: true, base, model });
+      } catch (e) {
+        return json({ error: 'config failed', detail: String(e && e.message || e).slice(0, 160) }, 500);
+      }
+    }
+
+    if (route === '/ai-edit' && method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+      const raw = Array.isArray(body && body.marks) ? body.marks.slice(0, 30) : [];
+      const globalHint = String((body && body.hint) || '').slice(0, 500);
+      const marks = [];
+      for (const m of raw) {
+        const key = String((m && m.key) || '');
+        if (!/^[a-z0-9_]{1,40}$/.test(key)) continue;
+        marks.push({
+          key,
+          label: String((m && m.label) || key).slice(0, 60),
+          text: String((m && m.text) || '').slice(0, 1200),
+          hint: String((m && m.hint) || '').slice(0, 500)
+        });
+      }
+      if (!marks.length) return json({ error: 'no valid marks' }, 400);
+      if (!globalHint && marks.every(m => !m.hint))
+        return json({ error: 'hint required' }, 400);
+      let cfg;
+      try { cfg = await readAIConfig(env); } catch (e) { cfg = {}; }
+      if (!cfg.ai_key)
+        return json({ error: 'AI 未配置，请先运行 tools/_site_ai_setup.py', code: 'AI_NOT_CONFIGURED' }, 503);
+      const payload = {
+        model: cfg.ai_model || 'deepseek-chat',
+        messages: [
+          { role: 'system', content: AI_SYS_PROMPT },
+          { role: 'user', content: JSON.stringify({ globalHint, fields: marks }) }
+        ],
+        temperature: 0.5,
+        max_tokens: 1600
+      };
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 45000);
+      let resp, rawTxt = '';
+      try {
+        resp = await fetch((cfg.ai_base || 'https://api.deepseek.com') + '/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.ai_key },
+          body: JSON.stringify(payload),
+          signal: ctrl.signal
+        });
+        rawTxt = await resp.text();
+      } catch (e) {
+        clearTimeout(timer);
+        return json({ error: 'AI 请求失败', detail: String(e && e.message || e).slice(0, 160) }, 502);
+      }
+      clearTimeout(timer);
+      if (!resp.ok)
+        return json({ error: 'AI 接口 HTTP ' + resp.status, detail: rawTxt.slice(0, 200) }, 502);
+      let out;
+      try { out = JSON.parse(rawTxt); } catch { return json({ error: 'AI 返回非 JSON' }, 502); }
+      const content = out && out.choices && out.choices[0] && out.choices[0].message
+        ? out.choices[0].message.content : '';
+      const parsed = parseAIJson(content);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+        return json({ error: 'AI 结果无法解析', raw: String(content).slice(0, 300) }, 502);
+      const edits = marks.map(m => ({
+        key: m.key,
+        before: m.text,
+        after: (typeof parsed[m.key] === 'string' ? parsed[m.key] : m.text).slice(0, MAX_CONTENT_VALUE)
+      }));
+      return json({ ok: true, edits });
     }
 
     if (route === '/content' && method === 'POST') {
