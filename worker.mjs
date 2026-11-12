@@ -38,6 +38,17 @@ const VERSIONS_SCHEMA = `CREATE TABLE IF NOT EXISTS content_versions (
 const PAGE = 'home';
 const LOCALE = 'zh';
 
+// 草稿：一份「未发布」的完整内容快照，按 page+locale 只存一行。
+// 存草稿绝不写 site_content、绝不发版；只有 /content/publish 才把草稿写回线上并留版本。
+const DRAFT_SCHEMA = `CREATE TABLE IF NOT EXISTS content_drafts (
+  page TEXT NOT NULL DEFAULT 'home',
+  locale TEXT NOT NULL DEFAULT 'zh',
+  content_json TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  updated_at TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (page, locale)
+)`;
+
 // AI 文案编辑：密钥只存 D1 settings，绝不进公开仓库；AI 只返回数据，永不返回代码。
 // 品牌词库 / 历史语气样本 / 禁用词本机没有，就不硬编（文档禁止代理自己编文案素材）。
 const AI_SYS_PROMPT = `你是网站文案编辑。输入包含页面 slug、语言 locale、若干字段（key / 中文名 / 当前文本 / 单条提示词 / maxLen 字数上限），以及一条全局提示词。
@@ -225,6 +236,32 @@ async function saveVersion(env, content, note) {
   return v;
 }
 
+// 草稿/发布的内容校验比旧 /content 更严：key 必须在默认文案白名单内，防止写入任意键。
+function cleanContentInput(c) {
+  if (!c || typeof c !== 'object' || Array.isArray(c)) return null;
+  const allowed = Object.keys(DEFAULT_CONTENT);
+  const keys = Object.keys(c);
+  if (!keys.length || keys.length > 60) return null;
+  const clean = {};
+  for (const k of keys) {
+    if (!/^[a-z0-9_]{1,40}$/.test(k) || allowed.indexOf(k) < 0) return null;
+    if (typeof c[k] !== 'string') return null;
+    clean[k] = c[k].slice(0, MAX_CONTENT_VALUE);
+  }
+  return clean;
+}
+
+async function readDraft(env) {
+  await env.DB.prepare(DRAFT_SCHEMA).run();
+  const row = await env.DB.prepare(
+    'SELECT content_json, note, updated_at FROM content_drafts WHERE page=? AND locale=?'
+  ).bind(PAGE, LOCALE).first();
+  if (!row) return null;
+  let content = {};
+  try { content = JSON.parse(row.content_json) || {}; } catch { return null; }
+  return { content, note: row.note || '', updated_at: row.updated_at || '' };
+}
+
 async function writeContentMap(env, c) {
   const keys = Object.keys(c);
   const sql = `INSERT INTO site_content (key, value, updated_at) VALUES ` +
@@ -300,8 +337,76 @@ export default {
       }
     }
 
+    if (route === '/content/draft' && method === 'GET') {
+      // 草稿内容不对外公开，仅管理模式可查
+      if (!(await checkAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
+      try {
+        const draft = await readDraft(env);
+        return json({ hasDraft: !!draft, draft });
+      } catch (e) {
+        return json({ error: 'draft read failed', detail: String(e && e.message || e).slice(0, 160) }, 500);
+      }
+    }
+
     if (method === 'POST' || method === 'DELETE') {
       if (!(await checkAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
+    }
+
+    if (route === '/content/draft' && method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+      const clean = cleanContentInput(body && body.content);
+      if (!clean) return json({ error: 'valid content object required' }, 400);
+      try {
+        await env.DB.prepare(DRAFT_SCHEMA).run();
+        await env.DB.prepare(
+          `INSERT INTO content_drafts (page, locale, content_json, note, updated_at)
+           VALUES (?, ?, ?, ?, datetime('now'))
+           ON CONFLICT(page, locale) DO UPDATE SET
+             content_json=excluded.content_json, note=excluded.note,
+             updated_at=excluded.updated_at`
+        ).bind(PAGE, LOCALE, JSON.stringify(clean),
+               String((body && body.note) || '').slice(0, 120) || '存为草稿').run();
+        // 注意：这里绝不调用 writeContentMap / saveVersion，草稿不影响访客看到的内容
+        return json({ ok: true, hasDraft: true, keys: Object.keys(clean).length });
+      } catch (e) {
+        return json({ error: 'draft save failed', detail: String(e && e.message || e).slice(0, 200) }, 500);
+      }
+    }
+
+    if (route === '/content/draft' && method === 'DELETE') {
+      try {
+        await env.DB.prepare(DRAFT_SCHEMA).run();
+        await env.DB.prepare('DELETE FROM content_drafts WHERE page=? AND locale=?')
+          .bind(PAGE, LOCALE).run();
+        return json({ ok: true });
+      } catch (e) {
+        return json({ error: 'draft discard failed', detail: String(e && e.message || e).slice(0, 200) }, 500);
+      }
+    }
+
+    if (route === '/content/publish' && method === 'POST') {
+      let body = {};
+      try { body = await request.json(); } catch { body = {}; }
+      try {
+        const draft = await readDraft(env);
+        if (!draft) return json({ error: 'no draft' }, 404);
+        const clean = cleanContentInput(draft.content);
+        if (!clean) return json({ error: 'bad draft content' }, 500);
+        const before = await readContentMap(env);
+        await writeContentMap(env, clean);
+        const after = Object.assign({}, before, clean);
+        const changed = !sameContent(before, after);
+        const version = changed
+          ? await saveVersion(env, after,
+              String((body && body.note) || draft.note || '').slice(0, 120) || '发布草稿')
+          : null;
+        await env.DB.prepare('DELETE FROM content_drafts WHERE page=? AND locale=?')
+          .bind(PAGE, LOCALE).run();
+        return json({ ok: true, published: Object.keys(clean).length, version, unchanged: !changed });
+      } catch (e) {
+        return json({ error: 'publish failed', detail: String(e && e.message || e).slice(0, 200) }, 500);
+      }
     }
 
     if (route === '/content/rollback' && method === 'POST') {
