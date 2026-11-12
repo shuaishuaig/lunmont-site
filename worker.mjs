@@ -17,12 +17,14 @@ const SCHEMA = `CREATE TABLE IF NOT EXISTS products (
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 )`;
+// ⚠️ SQLite 限制：ALTER TABLE ADD COLUMN 不允许非常量默认值（datetime('now') 会直接报错），
+// 所以补列一律不带默认值；新建表才用 DEFAULT (datetime('now'))。
 const PRODUCTS_DDL = [
   "ALTER TABLE products ADD COLUMN sku TEXT DEFAULT ''",
   "ALTER TABLE products ADD COLUMN ukey TEXT DEFAULT ''",
-  "ALTER TABLE products ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))"
+  "ALTER TABLE products ADD COLUMN updated_at TEXT"
 ];
-const PRODUCTS_MIGRATION_KEY = 'products_v2';
+const PRODUCTS_MIGRATION_KEY = 'products_v3';
 let productsReady = false;
 
 // 稳定业务键：有 sku 用 sku（产品改了名/换了图也认得出来），否则用 名称+分类。
@@ -227,9 +229,10 @@ async function ensureStyles(env) {
   stylesReady = true;
 }
 
-// products 迁移/去重（只做一次，用 settings 里的标记位判定，避免每次冷启动都跑）。
-// 步骤：建表 → 补列 → 按 productKey 回填 ukey → 历史重复只留最新一条 → 建唯一索引。
-// 唯一索引是最后一道保险：即使两个请求并发、应用层判重被绕过，数据库也生不出第二条。
+// products 迁移（只做一次，用 settings 标记位判定，避免每次冷启动都跑）。
+// 步骤：建表 → 补列 → 按 productKey 回填 ukey → 尽力建唯一索引。
+// ⚠️ 迁移里**绝不删数据**：历史重复只统计进 settings 供 /products/dedupe 预览，
+// 真正删除必须人来显式调用（默认 dryRun）。删行放在自动迁移里=一次判重口径失误就清库。
 async function ensureProducts(env) {
   if (productsReady) return;
   await env.DB.prepare(SETTINGS_SCHEMA).run();
@@ -242,7 +245,9 @@ async function ensureProducts(env) {
     try { await env.DB.prepare(ddl).run(); } catch (e) { /* 列已存在：忽略 */ }
   }
 
-  const all = await env.DB.prepare('SELECT id, name, category, sku, image, ukey FROM products').all();
+  // 补列可能部分失败：先确认四列（含 updated_at）都能读，读不到就抛出去
+  // —— 宁可不设标记也不能谎报迁移成功（否则标记=1 后永远补不上缺的列）
+  const all = await env.DB.prepare('SELECT id, name, category, sku, image, ukey, updated_at FROM products').all();
   const rows = all.results || [];
   const backfill = [];
   for (const p of rows) {
@@ -251,20 +256,34 @@ async function ensureProducts(env) {
   }
   if (backfill.length) await env.DB.batch(backfill);
 
-  // 历史重复（同一 ukey 多行）只保留 id 最大的一条 = 最后一次发布的内容
-  const dup = await env.DB.prepare(
-    "SELECT ukey, MAX(id) AS keep, COUNT(*) AS n FROM products WHERE ukey<>'' GROUP BY ukey HAVING COUNT(*)>1"
-  ).all();
-  const drop = [];
-  for (const g of (dup.results || [])) {
-    drop.push(env.DB.prepare("DELETE FROM products WHERE ukey=? AND id<>?").bind(g.ukey, g.keep));
-  }
-  if (drop.length) await env.DB.batch(drop);
+  // 只统计、不删除；有重复时索引建不上，应用层 upsert 仍然能保证不新增
+  let dupes = 0;
+  try {
+    const dup = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM (SELECT ukey FROM products WHERE ukey<>'' GROUP BY ukey HAVING COUNT(*)>1)"
+    ).first();
+    dupes = (dup && dup.n) || 0;
+  } catch (e) { /* 统计失败不影响主流程 */ }
+  try {
+    await env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_products_ukey ON products(ukey)').run();
+  } catch (e) { /* 存在历史重复：索引建不上，交给 /products/dedupe 人工确认 */ }
 
-  await env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_products_ukey ON products(ukey)').run();
-  await env.DB.prepare("INSERT INTO settings (key, value) VALUES (?, '1') ON CONFLICT(key) DO UPDATE SET value='1'")
-    .bind(PRODUCTS_MIGRATION_KEY).run();
+  const stmts = [
+    env.DB.prepare("INSERT INTO settings (key, value) VALUES (?, '1') ON CONFLICT(key) DO UPDATE SET value='1'")
+      .bind(PRODUCTS_MIGRATION_KEY),
+    env.DB.prepare("INSERT INTO settings (key, value) VALUES ('products_dupe_groups', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+      .bind(String(dupes))
+  ];
+  await env.DB.batch(stmts);
   productsReady = true;
+}
+
+// 历史重复体检 + 清理（仅在人工显式调用时删行，默认只预览）
+async function dupeReport(env) {
+  const r = await env.DB.prepare(
+    "SELECT ukey, COUNT(*) AS n, MIN(id) AS first_id, MAX(id) AS last_id FROM products WHERE ukey<>'' GROUP BY ukey HAVING COUNT(*)>1"
+  ).all();
+  return r.results || [];
 }
 
 // 单条产品入参清洗：字段截断 + 图片格式/体积校验，返回 ukey 供 upsert 判重
@@ -292,10 +311,9 @@ async function upsertMany(env, items) {
     const ex = cur.get(it.ukey);
     if (!ex) {
       created++;
+      // 不用 ON CONFLICT：唯一索引在「存在历史重复」时建不上，依赖它会让整批插入失败
       stmts.push(env.DB.prepare(
-        "INSERT INTO products (name, category, image, sku, ukey, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'))" +
-        " ON CONFLICT(ukey) DO UPDATE SET name=excluded.name, category=excluded.category," +
-        " image=excluded.image, sku=excluded.sku, updated_at=datetime('now')"
+        "INSERT INTO products (name, category, image, sku, ukey, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'))"
       ).bind(it.name, it.category, it.image, it.sku, it.ukey));
     } else if (ex.name !== it.name || (ex.category || '') !== it.category ||
                ex.image !== it.image || (ex.sku || '') !== it.sku) {
@@ -330,7 +348,14 @@ async function upsertProduct(env, item) {
     ).bind(item.name, item.category, item.image, item.sku, item.ukey).run();
     return { id: r.meta && r.meta.last_row_id, action: 'created' };
   } catch (e) {
-    // 并发下被唯一索引挡住的第二条：退化成更新，既不报错也不会多出一条
+    // ① 极端情况：updated_at 列还没补上（迁移失败）→ 去掉该列重试，保证写入不瘫
+    if (/no such column/i.test(String(e && e.message || e))) {
+      const r2 = await env.DB.prepare(
+        'INSERT INTO products (name, category, image, sku, ukey) VALUES (?, ?, ?, ?, ?)'
+      ).bind(item.name, item.category, item.image, item.sku, item.ukey).run();
+      return { id: r2.meta && r2.meta.last_row_id, action: 'created' };
+    }
+    // ② 并发下被唯一索引挡住的第二条：退化成更新，既不报错也不会多出一条
     const again = await env.DB.prepare('SELECT id FROM products WHERE ukey=?').bind(item.ukey).first();
     if (!again) throw e;
     await env.DB.prepare(
@@ -484,31 +509,45 @@ export default {
     const route = path.slice(4); // after /api
 
     if (route === '/products' && method === 'GET') {
+      // 绝不 SELECT 迁移中才补的列（updated_at 曾因 SQLite 限制加不上，
+      // 一条 SELECT 报错就被 catch 成空数组 —— 首页产品区会整体消失，且完全静默）
+      let rows = [];
       try {
         const r = await env.DB.prepare(
-          'SELECT id, name, category, image, sku, created_at, updated_at FROM products ORDER BY id DESC LIMIT 500'
+          'SELECT id, name, category, image, sku FROM products ORDER BY id DESC LIMIT 500'
         ).all();
-        const rows = r.results || [];
-        const out = { products: rows };
-        // ?stats=1 需要 admin：给「发布对账」用，返回总行数/唯一键数与重复组，不泄露图片内容
-        if (url.searchParams.get('stats') === '1') {
-          if (!(await checkAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
+        rows = r.results || [];
+      } catch (e) {
+        // 兜底：老 schema 只有四列时也要能出数据
+        try {
+          const r2 = await env.DB.prepare(
+            'SELECT id, name, category, image FROM products ORDER BY id DESC LIMIT 500'
+          ).all();
+          rows = r2.results || [];
+        } catch (e2) {
+          return json({ products: [], detail: String(e2 && e2.message || e2).slice(0, 160) }, 200);
+        }
+      }
+      const out = { products: rows };
+      // ?stats=1 需要 admin：给「发布对账」用，返回总行数/唯一键数/重复组数
+      if (url.searchParams.get('stats') === '1') {
+        if (!(await checkAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
+        try {
           const s = await env.DB.prepare(
             "SELECT COUNT(*) AS rows, COUNT(DISTINCT ukey) AS keys FROM products"
           ).first();
-          const dup = await env.DB.prepare(
-            "SELECT ukey, COUNT(*) AS n FROM products WHERE ukey<>'' GROUP BY ukey HAVING COUNT(*)>1"
-          ).all();
+          const dups = await dupeReport(env);
           out.stats = {
             rows: (s && s.rows) || rows.length,
             keys: (s && s.keys) || 0,
-            dupes: (dup.results || []).length
+            dupes: dups.length
           };
+        } catch (e) {
+          out.stats = { rows: rows.length, keys: 0, dupes: 0,
+                        detail: String(e && e.message || e).slice(0, 160) };
         }
-        return json(out);
-      } catch (e) {
-        return json({ products: [] });
       }
+      return json(out);
     }
 
     if (route === '/content' && method === 'GET') {
@@ -883,6 +922,36 @@ export default {
         });
       } catch (e) {
         return json({ error: 'batch failed', detail: String(e && e.message || e).slice(0, 160) }, 500);
+      }
+    }
+
+    // 历史重复体检/清理：默认 dryRun 只报告不删；要真删必须显式传 dryRun:false。
+    // keep 默认 newest（保留最后一次发布的内容），'oldest' 则保留最早那条。
+    if (route === '/products/dedupe' && method === 'POST') {
+      let body = {};
+      try { body = await request.json(); } catch { /* 允许空 body */ }
+      const dryRun = !body || body.dryRun !== false;
+      const keepOldest = String((body && body.keep) || 'newest') === 'oldest';
+      try {
+        await ensureProducts(env);
+        const groups = await dupeReport(env);
+        const wouldRemove = groups.reduce((s, g) => s + Math.max(0, (Number(g.n) || 0) - 1), 0);
+        if (dryRun) {
+          return json({ ok: true, dryRun: true, groups: groups.length, wouldRemove,
+                        sample: groups.slice(0, 10) });
+        }
+        if (groups.length) {
+          await env.DB.batch(groups.map(g => env.DB.prepare('DELETE FROM products WHERE ukey=? AND id<>?')
+            .bind(g.ukey, keepOldest ? g.first_id : g.last_id)));
+        }
+        let indexed = true;
+        try { await env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_products_ukey ON products(ukey)').run(); }
+        catch (e) { indexed = false; }
+        const after = await dupeReport(env);
+        return json({ ok: true, dryRun: false, removed: wouldRemove,
+                      groupsAfter: after.length, indexed });
+      } catch (e) {
+        return json({ error: 'dedupe failed', detail: String(e && e.message || e).slice(0, 160) }, 500);
       }
     }
 
