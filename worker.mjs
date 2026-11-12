@@ -279,6 +279,19 @@ function cleanContentInput(c) {
   return clean;
 }
 
+// 数值属性统一归一化成数字（含小位数），枚举/颜色统一成字符串。
+// 关键：前端提交数字、回读也必须是数字，否则面板回显与脏检查会出现 "72" !== 72 的假差异。
+const STYLE_NUMERIC = { fontSize: 0, fontWeight: 0, lineHeight: 2, letterSpacing: 3 };
+function normStyleValue(p, v) {
+  if (Object.prototype.hasOwnProperty.call(STYLE_NUMERIC, p)) {
+    const d = STYLE_NUMERIC[p];
+    const n = Number(v);
+    if (!isFinite(n)) return null;
+    return d === 0 ? Math.round(n) : Number(n.toFixed(d));
+  }
+  return String(v).slice(0, 40);
+}
+
 // 样式校验：key 必须是默认文案白名单字段；属性与值逐项过白名单，任一非法即整体拒绝。
 function cleanStyles(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
@@ -294,7 +307,9 @@ function cleanStyles(input) {
     for (const p of Object.keys(s)) {
       if (!Object.prototype.hasOwnProperty.call(STYLE_PROPS, p)) return null;
       if (!STYLE_PROPS[p](s[p])) return null;
-      o[p] = String(s[p]).slice(0, 40);
+      const nv = normStyleValue(p, s[p]);
+      if (nv === null) return null;
+      o[p] = nv;
     }
     if (Object.keys(o).length) out[k] = o;
   }
@@ -363,7 +378,16 @@ export default {
         for (const row of (r.results || [])) {
           try {
             const o = JSON.parse(row.css_json);
-            if (o && typeof o === 'object' && !Array.isArray(o)) styles[row.key] = o;
+            if (!o || typeof o !== 'object' || Array.isArray(o)) continue;
+            // 回读同样过一遍归一化：老行/脏行（字符串数字、未知属性）统一成标准形态
+            const out = {};
+            for (const p of Object.keys(o)) {
+              if (!Object.prototype.hasOwnProperty.call(STYLE_PROPS, p)) continue;
+              if (!STYLE_PROPS[p](o[p])) continue;
+              const nv = normStyleValue(p, o[p]);
+              if (nv !== null) out[p] = nv;
+            }
+            if (Object.keys(out).length) styles[row.key] = out;
           } catch (e) { /* 坏行忽略，绝不影响整页 */ }
         }
         return json({ styles });
