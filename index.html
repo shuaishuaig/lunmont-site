@@ -242,6 +242,8 @@ function esc(s){const d=document.createElement('div');d.textContent=s||'';return
 /* ---- 整页文案可视化编辑：contenteditable + D1 /api/content ---- */
 function contentNodes(){ return Array.prototype.slice.call(document.querySelectorAll('[data-content-key]')); }
 let contentCache = {}, contentBaseline = null;
+// 防止「进入管理模式时的异步 /api/content」晚于用户操作返回，把现场文字/状态覆盖掉
+let contentLoadSeq = 0;
 
 function applyContent(map){
   if(!map || typeof map !== 'object') return;
@@ -278,13 +280,15 @@ function snapshotContent(){
   return c;
 }
 
-async function loadContent(){
+async function loadContent(seq){
   try{
     const r = await fetch('/api/content',{credentials:'same-origin'});
     if(!r.ok) return false;
     const d = await r.json();
     if(d.content && Object.keys(d.content).length){
       contentCache = d.content;
+      // 用户已经开始改字/保存：这是陈旧响应，绝不 applyContent 覆盖现场
+      if(seq !== undefined && seq !== contentLoadSeq) return true;
       const ae = document.activeElement;
       const typing = editMode && ae && ae.hasAttribute && ae.hasAttribute('contenteditable');
       if(!typing) applyContent(contentCache);
@@ -315,6 +319,7 @@ function setEditable(on){
 }
 
 async function saveContent(){
+  contentLoadSeq++;   // 作废任何在途的 loadContent
   const content = snapshotContent();
   content.seo_title = $('#seoTitle').value.trim() || content.seo_title;
   content.seo_desc  = $('#seoDesc').value.trim() || content.seo_desc;
@@ -496,6 +501,7 @@ async function aiRun(){
 
 async function aiApply(){
   if(!aiEdits) return;
+  contentLoadSeq++;   // 同 saveContent：作废在途读取
   const content=snapshotContent();
   content.seo_title=$('#seoTitle').value.trim()||content.seo_title;
   content.seo_desc=$('#seoDesc').value.trim()||content.seo_desc;
@@ -532,6 +538,11 @@ document.addEventListener('click', e=>{
   if(!editMode || !el) return;
   e.preventDefault();
   if(pickMode) toggleMark(el.dataset.contentKey);
+}, true);
+// 用户一旦开始敲字，进入管理模式时的在途读取即作废，避免晚到的响应冲掉未保存内容
+document.addEventListener('input', e=>{
+  if(editMode && !pickMode && e.target && e.target.hasAttribute &&
+     e.target.hasAttribute('contenteditable')) contentLoadSeq++;
 }, true);
 
 function render(items) {
@@ -619,10 +630,14 @@ $('#editToggle').onclick=async()=>{
   if(editMode){
     primeSeo();
     setContentStatus('正在读取最新文案…');
-    await loadContent();
-    contentBaseline = snapshotContent();
-    setContentStatus('点页面文字直接改，改完点「保存文案」');
+    const seq = ++contentLoadSeq;
+    await loadContent(seq);
+    if(seq === contentLoadSeq){
+      contentBaseline = snapshotContent();
+      setContentStatus('点页面文字直接改，改完点「保存文案」');
+    }
   } else {
+    contentLoadSeq++;
     if(contentBaseline) applyContent(contentBaseline);
     setContentStatus('');
   }
