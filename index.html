@@ -1250,18 +1250,21 @@ $('#uploadBtn').onclick = async ()=>{
   if(!files.length){setStatus('请先选择图片','err');return;}
   const btn=$('#uploadBtn'); btn.disabled=true;
   const name=$('#pname').value.trim(), cat=$('#pcat').value;
-  let ok=0, fail=0, auth=0;
+  let ok=0, fail=0, auth=0, upd=0;
   for(let i=0;i<files.length;i++){
     try{
       const dataUrl=await compress(files[i]);
       const r=await api('/products',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({name: files.length>1? (name? name+'-'+(i+1) : files[i].name.replace(/\.[^.]+$/,'')) : (name||files[i].name.replace(/\.[^.]+$/,'')), category:cat, image:dataUrl})});
-      if(r.ok) ok++; else if(r.status===401) auth++; else fail++;
+      if(r.ok){ ok++; const d=await r.json().catch(()=>({}));
+        if(d.action==='updated') upd++; }
+      else if(r.status===401) auth++; else fail++;
     }catch(e){ fail++; }
   }
   btn.disabled=false; $('#files').value='';
   if(auth){ setStatus('管理密钥错误，请退出管理模式重新输入','err'); }
-  else setStatus(fail? `成功 ${ok} 张，失败 ${fail} 张（图片可能过大，请换小图重试）` : `成功上传 ${ok} 张 ✅`, fail?'err':'ok');
+  else if(fail) setStatus(`成功 ${ok} 张（其中 ${upd} 张为更新），失败 ${fail} 张（图片可能过大，请换小图重试）`,'err');
+  else setStatus(`成功 ${ok} 张 ✅` + (upd? `（${upd} 张同名已更新，未重复添加）`:''),'ok');
   if(ok) load();
 };
 
