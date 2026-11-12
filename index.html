@@ -191,7 +191,7 @@ function adminKey(){ return sessionStorage.getItem('lunmont_admin_key') || ''; }
 
 async function api(path, opts={}) {
   const headers = Object.assign({'X-Admin-Key': adminKey()}, opts.headers || {});
-  return fetch('/api'+path, Object.assign({credentials:'same-origin', headers}, opts));
+  return fetch('/api'+path, Object.assign({credentials:'same-origin'}, opts, {headers}));
 }
 
 function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
@@ -242,7 +242,9 @@ async function loadContent(){
     const d = await r.json();
     if(d.content && Object.keys(d.content).length){
       contentCache = d.content;
-      applyContent(contentCache);
+      const ae = document.activeElement;
+      const typing = editMode && ae && ae.hasAttribute && ae.hasAttribute('contenteditable');
+      if(!typing) applyContent(contentCache);
       return true;
     }
   }catch(e){}
@@ -380,6 +382,7 @@ $('#editToggle').onclick=async()=>{
   setEditable(editMode);
   if(editMode){
     primeSeo();
+    setContentStatus('正在读取最新文案…');
     await loadContent();
     contentBaseline = snapshotContent();
     setContentStatus('点页面文字直接改，改完点「保存文案」');
