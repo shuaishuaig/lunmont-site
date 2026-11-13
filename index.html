@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<!-- build-tag: 2026-11-13 product-variants-v3 -->
+<!-- build-tag: 2026-11-13 shop-checkout-v1 -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LUNMONT — 发夹与饰品批发 | 义乌市玥岑进出口有限公司</title>
 <meta name="description" content="LUNMONT（义乌市玥岑进出口有限公司）— 发夹与饰品批发，支持小批量起订与出口订单。Yiwu Cenova Import and Export Co., Ltd.">
@@ -386,6 +386,79 @@
   .float-btns #toTop.show{display:flex}
   .hero-swap{margin-top:16px}
   @media (max-width:640px){ .inq-form .inq-row{grid-template-columns:1fr} .float-btns a span.txt{display:none} }
+
+  /* ================= 商城：卡片价格 / 购物车 / 账户 / 结账 / 订单 / 管理 ================= */
+  .card .price{position:absolute;left:14px;bottom:56px;z-index:3;background:rgba(255,253,249,.92);
+    border:1px solid var(--line);padding:4px 12px;font-size:13px;letter-spacing:.06em;color:var(--ink)}
+  .card .price i{font-style:normal;font-size:10px;color:var(--muted);letter-spacing:.14em;margin-left:4px}
+  .cart-badge{display:inline-flex;align-items:center;justify-content:center;min-width:17px;height:17px;
+    border-radius:999px;background:var(--accent);color:#0f0e0c;font-size:11px;padding:0 4px;margin-left:5px}
+  .cart-badge:empty{display:none}
+  .shop-mask{position:fixed;inset:0;background:rgba(15,14,12,.45);z-index:60}
+  .shop-mask[hidden]{display:none}
+  .shop-panel{position:fixed;top:0;right:0;bottom:0;width:min(480px,94vw);z-index:61;background:#fffdf9;
+    border-left:1px solid var(--line);display:flex;flex-direction:column;box-shadow:-14px 0 44px rgba(15,14,12,.18)}
+  .shop-panel[hidden]{display:none}
+  .shop-center{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(560px,94vw);
+    max-height:88vh;overflow:auto;z-index:61;background:#fffdf9;border:1px solid var(--line);
+    padding:30px 28px;box-shadow:0 24px 80px rgba(15,14,12,.25)}
+  .shop-center[hidden]{display:none}
+  .shop-head{display:flex;align-items:center;justify-content:space-between;padding:18px 22px 14px;border-bottom:1px solid var(--line)}
+  .shop-head h3{margin:0;font-size:17px;font-weight:500;letter-spacing:.12em}
+  .shop-head button{border:1px solid var(--line);background:none;font-size:17px;cursor:pointer;padding:2px 10px;color:var(--muted)}
+  .shop-body{flex:1;overflow:auto;padding:16px 22px}
+  .shop-foot{border-top:1px solid var(--line);padding:16px 22px}
+  .cart-row{display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px dashed var(--line)}
+  .cart-row img{width:56px;height:56px;object-fit:cover;border:1px solid var(--line)}
+  .cart-row .nm{flex:1;font-size:13px;line-height:1.4}
+  .cart-row .nm small{display:block;color:var(--muted);font-size:11px}
+  .cart-row .qty{display:flex;align-items:center;gap:6px}
+  .cart-row .qty button{width:24px;height:24px;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:14px;line-height:1}
+  .cart-row .qty input{width:52px;text-align:center;border:1px solid var(--line);padding:3px 2px;font-size:12px}
+  .cart-row .rm{border:none;background:none;color:#c0392b;cursor:pointer;font-size:12px}
+  .shop-total{display:flex;justify-content:space-between;font-size:15px;letter-spacing:.06em}
+  .shop-total b{font-size:18px}
+  .shop-form label{display:block;font-size:11px;letter-spacing:.16em;color:#6b5a3e;margin:12px 0 5px}
+  .shop-form input,.shop-form textarea,.shop-form select{width:100%;padding:10px 12px;border:1px solid #d9cdb6;
+    background:#fff;font-size:13.5px;font-family:inherit;box-sizing:border-box}
+  .shop-form input:focus,.shop-form textarea:focus{outline:none;border-color:#d9a441}
+  .shop-form .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .shop-btn{width:100%;margin-top:18px;padding:12px;border:1px solid #d9a441;background:#d9a441;color:#0f0e0c;
+    font-size:13px;letter-spacing:.24em;cursor:pointer;font-family:inherit}
+  .shop-btn.ghost{background:transparent}
+  .shop-btn:disabled{opacity:.55;cursor:wait}
+  .shop-status{min-height:20px;margin-top:12px;font-size:12px;color:#8a7a60;letter-spacing:.03em;white-space:pre-line}
+  .shop-status.err{color:#c0392b}.shop-status.ok{color:#1e7a44}
+  .shop-tabs{display:flex;gap:0;margin-bottom:6px;border-bottom:1px solid var(--line)}
+  .shop-tabs button{flex:1;padding:10px 4px;border:none;background:none;font-size:13px;letter-spacing:.14em;
+    cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;font-family:inherit}
+  .shop-tabs button.on{color:var(--ink);border-bottom-color:#d9a441}
+  .pay-opt{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);padding:12px 14px;margin-top:10px;cursor:pointer}
+  .pay-opt.on{border-color:#d9a441;background:#fdf6e8}
+  .pay-opt input{margin-top:3px}
+  .pay-opt b{display:block;font-size:13px;font-weight:500}
+  .pay-opt small{color:var(--muted);font-size:11.5px;line-height:1.5;display:block;margin-top:2px}
+  .ord-card{border:1px solid var(--line);padding:12px 14px;margin-bottom:12px;background:#fff}
+  .ord-card .top{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+  .ord-card .st{font-size:11px;letter-spacing:.1em;padding:2px 8px;border:1px solid var(--line)}
+  .ord-card .st.paid{color:#1e7a44;border-color:#1e7a44}
+  .ord-card .st.pending_payment{color:#b58a2b;border-color:#b58a2b}
+  .ord-card .st.awaiting_confirmation{color:#8367b5;border-color:#8367b5}
+  .ord-card .st.shipped,.ord-card .st.delivered{color:#3f6fb5;border-color:#3f6fb5}
+  .ord-card .st.cancelled{color:#9a9a98;border-color:#9a9a98;text-decoration:line-through}
+  .ord-items{font-size:12px;color:#4b4438;margin-top:8px;line-height:1.7}
+  .ord-act{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+  .ord-act button{border:1px solid var(--line);background:#fff;font-size:12px;padding:5px 12px;cursor:pointer;font-family:inherit}
+  .ord-act button.prime{border-color:#d9a441;background:#d9a441;color:#0f0e0c}
+  /* 管理端商城面板：复用 markpanel 外观，表格化订单 */
+  .so-thead,.so-row{display:grid;grid-template-columns:118px 1fr 92px 96px 120px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px dashed var(--line);font-size:12px}
+  .so-thead{color:var(--muted);letter-spacing:.1em;font-size:11px}
+  .so-row .num{font-weight:600}
+  .so-row select{border:1px solid var(--line);padding:3px 4px;font-size:11px;background:#fff}
+  .so-row button{border:1px solid #d9a441;background:#d9a441;color:#0f0e0c;font-size:11px;padding:3px 8px;cursor:pointer}
+  .wire-box{border:1px dashed #d9a441;background:#fdf6e8;padding:14px 16px;font-size:12.5px;line-height:1.8;margin-top:12px}
+  .wire-box b{font-size:13px}
+  @media (max-width:640px){ .so-thead,.so-row{grid-template-columns:1fr;gap:4px} .shop-form .row2{grid-template-columns:1fr} }
 </style>
 </head>
 <body>
@@ -402,6 +475,7 @@
   <button type="button" class="ghost" id="draftToggle">草稿箱</button>
   <button type="button" class="ghost" id="styleToggle">文字样式</button>
   <button type="button" class="ghost" id="inqToggle">询盘</button>
+  <button type="button" class="ghost" id="shopAdminToggle">商城</button>
   <span class="draft-badge" id="draftBadge" hidden>● 有草稿未发布</span>
   <span class="st" id="contentStatus"></span>
 </div>
@@ -443,6 +517,44 @@
   <div class="mp-head"><b>访客询盘</b><span><button type="button" id="inqRefresh">刷新</button><button type="button" id="inqClose">关闭</button></span></div>
   <div id="inqList"></div>
   <div class="ai-status" id="inqPanelStatus"></div>
+</div>
+<div class="markpanel sans" id="shopAdminPanel" hidden>
+  <div class="mp-head"><b>商城管理 · 订单 / 客户 / 收款</b><span><button type="button" id="saRefresh">刷新</button><button type="button" id="saClose">关闭</button></span></div>
+  <div class="shop-tabs"><button type="button" class="on" id="saTabOrders">订单</button><button type="button" id="saTabCustomers">客户</button><button type="button" id="saTabSettings">收款设置</button></div>
+  <div id="saOrders">
+    <div class="so-thead"><span>订单号</span><span>客户</span><span>金额</span><span>状态</span><span>操作</span></div>
+    <div id="saOrderList"></div>
+  </div>
+  <div id="saCustomers" hidden>
+    <div class="so-thead" style="grid-template-columns:150px 1fr 110px 90px"><span>邮箱</span><span>姓名 / 公司</span><span>订单数</span><span>已付金额</span></div>
+    <div id="saCustomerList"></div>
+  </div>
+  <div id="saSettings" hidden>
+    <div class="sp-sec">万里汇 B2B 汇款收款</div>
+    <div class="shop-form" style="max-width:560px">
+      <label><input type="checkbox" id="saWireOn" style="width:auto;margin-right:6px"> 开启汇款收款选项（结账页显示收款账号）</label>
+      <label>账户名 / Account Name</label><input type="text" id="saWireName" maxlength="160">
+      <label>开户行 / Bank</label><input type="text" id="saWireBank" maxlength="160">
+      <label>账号 / Account No.</label><input type="text" id="saWireNo" maxlength="80">
+      <label>收款说明 / Note（SWIFT code、附言要求等，客户下单页可见）</label><textarea id="saWireNote" rows="3" maxlength="1000"></textarea>
+      <button type="button" class="shop-btn" id="saWireSave" style="max-width:220px">保存汇款设置</button>
+    </div>
+    <div class="sp-sec">PayPal 在线收款</div>
+    <div class="shop-form" style="max-width:560px">
+      <label>Client ID</label><input type="text" id="saPpCid" maxlength="300" autocomplete="off">
+      <label>Secret</label><input type="password" id="saPpSec" maxlength="300" autocomplete="new-password">
+      <label>环境</label><select id="saPpEnv"><option value="sandbox">Sandbox 测试</option><option value="live">Live 正式</option></select>
+      <div class="shop-status" id="saPpState">状态读取中…</div>
+      <button type="button" class="shop-btn" id="saPpSave" style="max-width:220px">保存 PayPal 设置</button>
+    </div>
+    <div class="sp-sec">通知邮件（可选：需 Worker 绑定 Cloudflare Email）</div>
+    <div class="shop-form" style="max-width:560px">
+      <label>接收新订单通知的邮箱</label><input type="email" id="saNotify" maxlength="160">
+      <label>发件地址（已验证域名邮箱）</label><input type="email" id="saFrom" maxlength="160">
+      <button type="button" class="shop-btn" id="saMailSave" style="max-width:220px">保存邮件设置</button>
+    </div>
+  </div>
+  <div class="ai-status" id="saStatus"></div>
 </div>
 <div class="markpanel sans" id="stylePanel" hidden>
   <div class="mp-head"><b>文字样式 · 艺术字</b><span><button type="button" id="spClose">关闭</button></span></div>
@@ -491,6 +603,8 @@
   <div class="links sans">
     <a href="#products" data-content-key="nav_products">产品展示</a>
     <a href="#contact" data-content-key="nav_contact">联系我们</a>
+    <a href="#" id="navOrders" hidden>我的订单</a>
+    <a href="#" id="navAccount">登录<span class="cart-badge" id="cartBadge"></span></a>
   </div>
 </nav>
 
@@ -620,10 +734,68 @@
   <img id="lbImg" src="" alt="">
   <div class="lb-cap"><h3 id="lbName"></h3><p id="lbCat"></p>
     <div class="lb-act">
-      <button type="button" class="solid" id="lbInquiry">询盘这款</button>
+      <button type="button" class="solid" id="lbCart" hidden>加入购物车</button>
+      <button type="button" id="lbInquiry">询盘这款</button>
       <a class="sans" style="padding:10px 26px;border:1px solid #d9a441;color:#e8ddc9;text-decoration:none;font-size:13px;letter-spacing:.2em" id="lbMail">邮件询价</a>
     </div>
   </div>
+</div>
+
+<!-- ================= 商城 UI：购物车抽屉 / 登录注册 / 结账 / 我的订单 ================= -->
+<div class="shop-mask" id="shopMask" hidden></div>
+
+<div class="shop-panel" id="cartPanel" hidden>
+  <div class="shop-head"><h3 class="sans">购物车 CART</h3><button type="button" id="cartClose">×</button></div>
+  <div class="shop-body" id="cartBody"></div>
+  <div class="shop-foot sans">
+    <div class="shop-total"><span>合计（不含运费）</span><b id="cartTotal">$0.00</b></div>
+    <button type="button" class="shop-btn" id="cartCheckout">去结算 Checkout</button>
+  </div>
+</div>
+
+<div class="shop-center" id="authPanel" hidden>
+  <div class="shop-tabs sans"><button type="button" id="tabLogin" class="on">登录</button><button type="button" id="tabReg">注册买家账号</button></div>
+  <form class="shop-form sans" id="loginForm">
+    <label>邮箱 / Email</label><input type="email" id="liEmail" required maxlength="160" autocomplete="email">
+    <label>密码 / Password</label><input type="password" id="liPass" required maxlength="200" autocomplete="current-password">
+    <button type="submit" class="shop-btn">登 录</button>
+    <div class="shop-status" id="liStatus"></div>
+  </form>
+  <form class="shop-form sans" id="regForm" hidden>
+    <label>姓名 / Contact Name *</label><input type="text" id="rgName" required maxlength="120">
+    <label>公司 / Company</label><input type="text" id="rgCompany" maxlength="160">
+    <div class="row2">
+      <div><label>国家 / Country</label><input type="text" id="rgCountry" maxlength="60" placeholder="e.g. Russia"></div>
+      <div><label>电话 / Phone</label><input type="text" id="rgPhone" maxlength="60"></div>
+    </div>
+    <label>邮箱 / Email *</label><input type="email" id="rgEmail" required maxlength="160" autocomplete="email">
+    <label>密码 / Password *（至少 8 位）</label><input type="password" id="rgPass" required minlength="8" maxlength="200" autocomplete="new-password">
+    <button type="submit" class="shop-btn">注 册</button>
+    <div class="shop-status" id="rgStatus"></div>
+  </form>
+</div>
+
+<div class="shop-center" id="checkoutPanel" hidden>
+  <h3 class="sans" style="margin:0 0 4px;font-size:17px;letter-spacing:.12em">结账 CHECKOUT</h3>
+  <p class="sans" style="font-size:12px;color:var(--muted);margin:0 0 6px" id="coSum">—</p>
+  <form class="shop-form sans" id="coForm">
+    <label>收货人 / Receiver *</label><input type="text" id="coName" required maxlength="120">
+    <div class="row2">
+      <div><label>电话 / Phone</label><input type="text" id="coPhone" maxlength="60"></div>
+      <div><label>国家 / Country</label><input type="text" id="coCountry" maxlength="60"></div>
+    </div>
+    <label>详细地址 / Address *（国际快递或货代仓）</label><textarea id="coAddr" required maxlength="500" rows="2"></textarea>
+    <label>备注 / Note（目的港、清关要求等）</label><textarea id="coNote" maxlength="2000" rows="2"></textarea>
+    <div id="payOpts"></div>
+    <button type="submit" class="shop-btn" id="coSubmit">提交订单</button>
+    <div class="shop-status" id="coStatus"></div>
+  </form>
+</div>
+
+<div class="shop-center" id="ordersPanel" hidden>
+  <div class="shop-head" style="border:none;padding:0 0 10px"><h3 class="sans">我的订单 ORDERS</h3><button type="button" id="ordersClose">×</button></div>
+  <div id="ordersBody" class="sans"></div>
+  <div class="shop-status" id="ordersStatus"></div>
 </div>
 
 <div class="float-btns sans">
@@ -1824,10 +1996,15 @@ function render(items) {
     // 副标题：品类 · 材质 · N 款花色
     const sub = [it.category||'', it.material||'', vs.length>1?vs.length+' 款花色':'']
       .filter(Boolean).join(' · ');
+    const pv = Number(it.price||0);
+    const priceHtml = editMode ? '' : (pv>0
+      ? `<div class="price sans">$${pv.toFixed(2)}<i>USD</i></div>`
+      : `<div class="price sans">询价<i>INQ</i></div>`);
     el.innerHTML = `<img src="${esc(lead.image||it.image)}" alt="${esc(it.name)}" loading="lazy">
       <div class="shade"></div>
       ${tagHtml}
       ${strip}
+      ${priceHtml}
       <div class="cap"><h3>${esc(it.baseName||it.name)}</h3><p class="sans">${esc(sub)}</p></div>
       ${editMode && !String(it.id).startsWith('d') ? '<button class="pen sans" data-id="'+esc(it.id)+'">改信息</button><button class="del sans" data-id="'+esc(it.id)+'">删除</button>':''}`;
     el._card = it;
@@ -2095,7 +2272,14 @@ document.querySelectorAll('#vModeSwitch button').forEach(b=>b.onclick=()=>{
 function openLightbox(it){
   $('#lbImg').src=it.image; $('#lbImg').alt=it.name||'';
   $('#lbName').textContent=it.name||'';
-  $('#lbCat').textContent=(it.category||'')+(it.sku?(' · '+it.sku):'');
+  $('#lbCat').textContent=(it.category||'')+(it.sku?(' · '+it.sku):'')+(Number(it.price||0)>0?(' · $'+Number(it.price).toFixed(2)+' USD'):'');
+  const lbCartBtn=$('#lbCart');
+  if(lbCartBtn){
+    const pv=Number(it.price||0);
+    lbCartBtn.hidden = editMode || !(pv>0) || !(it.id && !String(it.id).startsWith('d'));
+    lbCartBtn.textContent = pv>0 ? ('加入购物车 · $'+pv.toFixed(2)) : '加入购物车';
+    lbCartBtn.onclick=()=>{ cartAdd(it); $('#lightbox').hidden=true; document.body.style.overflow=''; cartOpen(true); };
+  }
   $('#lbMail').href='mailto:info@lunmont.asia?subject='+encodeURIComponent('Inquiry: '+(it.sku||it.name||''))+'&body='+encodeURIComponent('Hi LUNMONT, I am interested in '+(it.sku||it.name)+' (qty: __). Please send wholesale price and MOQ.\n');
   $('#lbInquiry').onclick=()=>{ $('#lightbox').hidden=true; setInqTag(it); document.getElementById('contact').scrollIntoView({behavior:'smooth'}); $('#inqMsg').focus(); };
   $('#lightbox').hidden=false;
@@ -2353,6 +2537,462 @@ document.addEventListener('mouseover', e=>{
     Math.round(r.width)+'×'+Math.round(r.height);
 }, true);
 window.addEventListener('resize', ()=>{ if(editMode) paintBlockLabels(); });
+
+/* ========================= 商城：客户 / 购物车 / 结账 / 订单 =========================
+   - 价格单位 USD；金额前端只做展示，下单由服务端按产品行重算（防篡改）。
+   - 购物车存 localStorage（lm_cart，条目=产品行 id+qty），登录态由 HttpOnly Cookie 维持，
+     前端只缓存 /api/shop/me 的展示信息。
+   - PayPal：收银台在服务器创单后打开；?pp=capture 回跳自动请款。
+   ================================================================================ */
+let me = null;                 // {id,email,name,...} 或 null
+let payCfg = null;             // /api/shop/payment-config 缓存
+let cart = [];                 // [{id, sku, name, image, price, qty}]
+let coPayMethod = 'wire';      // 结账当前选中的付款方式
+let ordersCache = [];
+try{ cart = JSON.parse(localStorage.getItem('lm_cart')||'[]') || []; }catch(e){ cart=[]; }
+if(!Array.isArray(cart)) cart=[];
+cart = cart.filter(x=>x && Number(x.id)>0 && Number(x.qty)>0);
+
+function cartSave(){ try{ localStorage.setItem('lm_cart', JSON.stringify(cart)); }catch(e){} paintCartBadge(); }
+function cartSum(){ return cart.reduce((s,x)=>s+Math.round(Number(x.price||0)*100)*x.qty,0)/100; }
+function paintCartBadge(){
+  const b=$('#cartBadge'); if(!b) return;
+  const n=cart.reduce((s,x)=>s+x.qty,0);
+  b.textContent = n>0 ? String(n) : '';
+}
+function cartAdd(it){
+  const id=Number(it.id), price=Number(it.price||0);
+  if(!(id>0) || !(price>0)){ toast('该商品未定价，请用「询盘」询价','err'); return; }
+  const ex=cart.find(x=>x.id===id);
+  if(ex) ex.qty=Math.min(ex.qty+1, 999999);
+  else cart.push({id, sku:it.sku||'', name:(it.name||'').slice(0,120), image:it.image||'', price, qty:1});
+  cartSave(); toast('已加入购物车：'+(it.sku||'')+' ×1','ok');
+}
+function toast(msg, cls){
+  let t=document.getElementById('shopToast');
+  if(!t){ t=document.createElement('div'); t.id='shopToast';
+    t.style.cssText='position:fixed;left:50%;bottom:88px;transform:translateX(-50%);z-index:80;'+
+      'background:#0f0e0c;color:#fffdf9;padding:10px 22px;font-size:13px;letter-spacing:.06em;'+
+      'border:1px solid #d9a441;opacity:0;transition:opacity .25s;pointer-events:none;font-family:inherit';
+    document.body.appendChild(t); }
+  t.textContent=msg; t.style.color = cls==='err' ? '#ff9d8a' : '#ffe6b3';
+  t.style.opacity='1';
+  clearTimeout(toast._h); toast._h=setTimeout(()=>{ t.style.opacity='0'; }, 2400);
+}
+function shopOverlay(on){ $('#shopMask').hidden=!on; }
+function closeAllShop(){
+  ['cartPanel','authPanel','checkoutPanel','ordersPanel'].forEach(id=>{ $('#'+id).hidden=true; });
+  shopOverlay(false);
+}
+function cartOpen(on){
+  $('#cartPanel').hidden=!on; shopOverlay(on);
+  if(on) renderCart();
+}
+function openOnly(id){
+  closeAllShop(); $('#'+id).hidden=false; shopOverlay(true);
+}
+function renderCart(){
+  const box=$('#cartBody'); box.innerHTML='';
+  if(!cart.length){
+    box.innerHTML='<div style="padding:40px 0;text-align:center;color:var(--muted);font-size:13px">购物车是空的。<br>选一款有价格的产品加入购物车。</div>';
+  } else {
+    for(const x of cart){
+      const row=document.createElement('div'); row.className='cart-row';
+      row.innerHTML=`<img src="${esc(x.image)}" alt="">
+        <div class="nm">${esc(x.name)}<small>${esc(x.sku||'')} · $${Number(x.price).toFixed(2)}</small></div>
+        <div class="qty"><button data-a="minus">−</button><input type="number" min="1" max="999999" value="${x.qty}"><button data-a="plus">＋</button></div>
+        <button class="rm" data-a="del">移除</button>`;
+      row._id=x.id; box.appendChild(row);
+    }
+    box.querySelectorAll('.cart-row').forEach(r=>{
+      const it=cart.find(c=>c.id===r._id); if(!it) return;
+      const inp=r.querySelector('input');
+      r.querySelector('[data-a=minus]').onclick=()=>{ it.qty=Math.max(1,it.qty-1); cartSave(); renderCart(); };
+      r.querySelector('[data-a=plus]').onclick=()=>{ it.qty=Math.min(999999,it.qty+1); cartSave(); renderCart(); };
+      inp.onchange=()=>{ const v=Math.floor(Number(inp.value)||1); it.qty=Math.max(1,Math.min(999999,v)); cartSave(); renderCart(); };
+      r.querySelector('[data-a=del]').onclick=()=>{ cart=cart.filter(c=>c.id!==it.id); cartSave(); renderCart(); };
+    });
+  }
+  $('#cartTotal').textContent='$'+cartSum().toFixed(2);
+}
+$('#cartClose').onclick=()=>cartOpen(false);
+$('#cartBadge').onclick=e=>{ e.preventDefault(); cartOpen(true); };
+$('#navAccount').onclick=e=>{
+  e.preventDefault();
+  if(me){ // 已登录：直接看订单
+    ordersOpen(); return;
+  }
+  openOnly('authPanel');
+};
+$('#shopMask').onclick=closeAllShop;
+
+/* ---- 登录 / 注册 ---- */
+$('#tabLogin').onclick=()=>{ $('#tabLogin').classList.add('on'); $('#tabReg').classList.remove('on');
+  $('#loginForm').hidden=false; $('#regForm').hidden=true; };
+$('#tabReg').onclick=()=>{ $('#tabReg').classList.add('on'); $('#tabLogin').classList.remove('on');
+  $('#regForm').hidden=false; $('#loginForm').hidden=true; };
+$('#loginForm').onsubmit=async e=>{
+  e.preventDefault();
+  const st=$('#liStatus'); st.textContent='登录中…'; st.className='shop-status';
+  try{
+    const r=await fetch('/api/shop/login',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email:$('#liEmail').value.trim(),password:$('#liPass').value})});
+    const d=await r.json();
+    if(r.ok && d.ok){ me=d.customer; afterAuth(); closeAllShop(); st.textContent=''; }
+    else { st.textContent=d.error||('登录失败 '+r.status); st.className='shop-status err'; }
+  }catch(err){ st.textContent='网络异常，请稍后再试'; st.className='shop-status err'; }
+};
+$('#regForm').onsubmit=async e=>{
+  e.preventDefault();
+  const st=$('#rgStatus'); st.textContent='注册中…'; st.className='shop-status';
+  try{
+    const r=await fetch('/api/shop/register',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email:$('#rgEmail').value.trim(),password:$('#rgPass').value,
+        name:$('#rgName').value.trim(),company:$('#rgCompany').value.trim(),
+        country:$('#rgCountry').value.trim(),phone:$('#rgPhone').value.trim()})});
+    const d=await r.json();
+    if((r.ok||r.status===201) && d.ok){ me=d.customer; afterAuth(); closeAllShop(); toast('注册成功，欢迎 '+me.name,'ok'); st.textContent=''; }
+    else { st.textContent=d.error||('注册失败 '+r.status); st.className='shop-status err'; }
+  }catch(err){ st.textContent='网络异常，请稍后再试'; st.className='shop-status err'; }
+};
+function afterAuth(){
+  const a=$('#navAccount');
+  // 徽章必须重建在同一处：textContent 会把 #cartBadge 抹掉
+  if(me){ a.textContent=''; a.appendChild(document.createTextNode((me.name||me.email||'账户')+' '));
+    a.title='双击退出登录'; }
+  else { a.textContent='登录 '; }
+  const b=document.createElement('span'); b.className='cart-badge'; b.id='cartBadge';
+  b.onclick=e=>{ e.preventDefault(); cartOpen(true); };
+  a.appendChild(b);
+  $('#navOrders').hidden=!me;
+  paintCartBadge();
+}
+$('#navAccount').addEventListener('dblclick', async e=>{ // 双击=登出（不打扰单选）
+  if(!me) return;
+  e.preventDefault();
+  await fetch('/api/shop/logout',{method:'POST',credentials:'same-origin'}).catch(()=>{});
+  me=null; afterAuth(); toast('已退出登录','ok');
+});
+$('#navOrders').onclick=e=>{ e.preventDefault(); ordersOpen(); };
+
+/* ---- 结账 ---- */
+async function loadPayCfg(){
+  try{
+    const r=await fetch('/api/shop/payment-config',{credentials:'same-origin'});
+    if(r.ok) payCfg=await r.json();
+  }catch(e){}
+  return payCfg;
+}
+function paintPayOpts(){
+  const box=$('#payOpts'); box.innerHTML='';
+  const wire = payCfg && payCfg.wire && payCfg.wire.enabled;
+  const pp = payCfg && payCfg.paypalEnabled;
+  const opts=[];
+  if(pp) opts.push({k:'paypal',t:'PayPal 在线支付',d:'信用卡 / PayPal 余额，实时到账确认；小额样品单推荐。'});
+  if(wire) opts.push({k:'wire',t:'银行汇款 / 万里汇 B2B',d:'提交订单后按页面收款账号汇款，回填流水号，我们核对到账后确认订单。'});
+  if(!opts.length){
+    box.innerHTML='<div class="shop-status">在线收款暂未开放：提交订单后将进入「待确认」，我们会通过邮件与您确认付款方式。</div>';
+    coPayMethod=''; return;
+  }
+  if(!opts.find(o=>o.k===coPayMethod)) coPayMethod=opts[0].k;
+  for(const o of opts){
+    const l=document.createElement('label');
+    l.className='pay-opt sans'+(o.k===coPayMethod?' on':'');
+    l.innerHTML=`<input type="radio" name="paym" value="${o.k}" ${o.k===coPayMethod?'checked':''}>
+      <span><b>${o.t}</b><small>${o.d}</small></span>`;
+    l.querySelector('input').onchange=()=>{ coPayMethod=o.k; paintPayOpts(); };
+    box.appendChild(l);
+  }
+}
+$('#cartCheckout').onclick=async ()=>{
+  if(!cart.length){ toast('购物车为空','err'); return; }
+  if(!me){ openOnly('authPanel'); toast('请先登录/注册买家账号','ok'); return; }
+  cartOpen(false);
+  await loadPayCfg(); paintPayOpts();
+  $('#coSum').textContent=cart.length+' 个条目 · 合计 $'+cartSum().toFixed(2)+' USD（运费按实际渠道另议）';
+  if(me){ $('#coName').value=$('#coName').value||me.name||''; $('#coPhone').value=$('#coPhone').value||me.phone||''; $('#coCountry').value=$('#coCountry').value||me.country||''; }
+  openOnly('checkoutPanel');
+};
+$('#coForm').onsubmit=async e=>{
+  e.preventDefault();
+  const btn=$('#coSubmit'); btn.disabled=true;
+  const st=$('#coStatus'); st.textContent='提交中…'; st.className='shop-status';
+  try{
+    const r=await fetch('/api/shop/orders',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({pay_method:coPayMethod,
+        items:cart.map(x=>({id:x.id,qty:x.qty})),
+        ship_name:$('#coName').value.trim(),ship_phone:$('#coPhone').value.trim(),
+        ship_country:$('#coCountry').value.trim(),ship_address:$('#coAddr').value.trim(),
+        note:$('#coNote').value.trim()})});
+    const d=await r.json();
+    if(!r.ok || !d.ok){ st.textContent=d.error||('下单失败 '+r.status); st.className='shop-status err'; btn.disabled=false; return; }
+    const o=d.order;
+    cart=[]; cartSave(); renderCart();
+    st.className='shop-status ok';
+    if(o.status==='paid'){ st.textContent='支付完成，订单 '+o.num+' 已确认。'; finishCheckout(o); return; }
+    if(coPayMethod==='paypal'){
+      // 直接走 PayPal：创单→跳收银台；回跳后 ?pp=capture 处理请款
+      st.textContent='正在打开 PayPal 收银台…';
+      const cr=await fetch('/api/shop/paypal/create',{method:'POST',credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({num:o.num})});
+      const cd=await cr.json().catch(()=>({}));
+      if(cr.ok && cd.approveUrl){ location.href=cd.approveUrl; return; }
+      st.textContent='PayPal 暂不可用（'+(cd.error||cr.status)+'），订单 '+o.num+' 已保留，可改汇款或稍后重试。';
+      showWireInfo(o);
+    } else {
+      st.textContent='订单 '+o.num+' 已创建，等待付款。';
+      showWireInfo(o);
+      paintReceiptForm(o);
+    }
+  }catch(err){ st.textContent='网络异常：'+String(err.message||err).slice(0,60); st.className='shop-status err'; }
+  btn.disabled=false;
+};
+function showWireInfo(o){
+  const w=payCfg && payCfg.wire;
+  const box=$('#coStatus');
+  if(w && w.enabled){
+    const div=document.createElement('div'); div.className='wire-box sans';
+    div.innerHTML='<b>汇款账号 / Wire transfer</b><br>'+
+      '账户名：'+esc(w.account_name)+'<br>开户行：'+esc(w.bank_name)+'<br>账号：'+esc(w.account_no)+'<br>'+
+      (w.note?esc(w.note)+'<br>':'')+
+      '<b>金额：$'+o.total+' USD · 订单号 '+esc(o.num)+'（汇款附言务必带订单号）</b>';
+    $('#checkoutPanel').appendChild(div);
+  }
+}
+function paintReceiptForm(o){
+  if(document.getElementById('rcptWrap')) return;
+  const div=document.createElement('div'); div.id='rcptWrap'; div.className='sans';
+  div.style.marginTop='14px';
+  div.innerHTML='<label style="font-size:11px;letter-spacing:.16em;color:#6b5a3e">已汇款？提交流水号/参考号（核对到账后订单变「已付款」）</label>'+
+    '<div style="display:flex;gap:8px;margin-top:6px"><input id="rcptNo" maxlength="500" style="flex:1;padding:9px 10px;border:1px solid #d9cdb6;font-size:12.5px" placeholder="e.g. WF receipt / bank ref">'+
+    '<button type="button" id="rcptBtn" style="border:1px solid #d9a441;background:#d9a441;padding:0 16px;cursor:pointer;font-size:12px">提交回执</button></div>'+
+    '<div class="shop-status" id="rcptStatus"></div>';
+  $('#checkoutPanel').appendChild(div);
+  $('#rcptBtn').onclick=async()=>{
+    const v=$('#rcptNo').value.trim(); const st=$('#rcptStatus');
+    if(!v){ st.textContent='请填写流水号/参考号'; st.className='shop-status err'; return; }
+    st.textContent='提交中…';
+    const r=await fetch('/api/shop/orders/receipt',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({num:o.num,receipt:v})});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok&&d.ok){ st.textContent='已提交，订单进入「待确认到账」。'; st.className='shop-status ok'; }
+    else { st.textContent=d.error||('提交失败 '+r.status); st.className='shop-status err'; }
+  };
+}
+function finishCheckout(o){
+  closeAllShop();
+  toast('订单 '+o.num+' 提交成功','ok');
+  ordersOpen();
+}
+
+/* ---- 我的订单 ---- */
+async function ordersOpen(){
+  openOnly('ordersPanel');
+  await loadOrders();
+}
+$('#ordersClose').onclick=closeAllShop;
+async function loadOrders(){
+  const st=$('#ordersStatus'); st.textContent='读取中…'; st.className='shop-status';
+  try{
+    const r=await fetch('/api/shop/orders',{credentials:'same-origin'});
+    if(r.status===401){ me=null; afterAuth(); closeAllShop(); openOnly('authPanel'); return; }
+    const d=await r.json(); ordersCache=d.orders||[]; renderOrders();
+    st.textContent='';
+  }catch(e){ st.textContent='读取失败'; st.className='shop-status err'; }
+}
+const ST_ZH={pending_payment:'待付款',awaiting_confirmation:'待确认到账',paid:'已付款',
+  processing:'备货中',shipped:'已发货',delivered:'已签收',cancelled:'已取消',refunded:'已退款'};
+function renderOrders(){
+  const box=$('#ordersBody'); box.innerHTML='';
+  if(!ordersCache.length){ box.innerHTML='<div style="padding:30px 0;text-align:center;color:var(--muted)">还没有订单。</div>'; return; }
+  for(const o of ordersCache){
+    const div=document.createElement('div'); div.className='ord-card';
+    const items=o.items.map(x=>esc(x.sku||'')+' × '+x.qty+' — $'+(x.price_cents/100).toFixed(2)).join('<br>');
+    div.innerHTML=`<div class="top"><span>${esc(o.num)} · ${esc(o.created_at||'')}</span><span class="st ${esc(o.status)}">${ST_ZH[o.status]||esc(o.status)}</span></div>
+      <div class="ord-items">${items}</div>
+      <div class="top" style="margin-top:6px"><span>合计 <b>$${esc(o.total)}</b> USD${o.pay_method?(' · '+(o.pay_method==='paypal'?'PayPal':'汇款')):''}</span></div>
+      <div class="ord-act"></div>`;
+    const act=div.querySelector('.ord-act');
+    if(o.status==='pending_payment'){
+      if(o.pay_method==='paypal'){
+        const b=document.createElement('button'); b.textContent='继续支付 PayPal'; b.className='prime';
+        b.onclick=()=>paypalResume(o.num,b); act.appendChild(b);
+      }
+      const c=document.createElement('button'); c.textContent='取消订单';
+      c.onclick=async()=>{ if(!confirm('确认取消订单 '+o.num+'？')) return;
+        const r=await fetch('/api/shop/orders/cancel',{method:'POST',credentials:'same-origin',
+          headers:{'Content-Type':'application/json'},body:JSON.stringify({num:o.num})});
+        if(r.ok) loadOrders(); };
+      act.appendChild(c);
+    }
+    box.appendChild(div);
+  }
+}
+async function paypalResume(num, btn){
+  btn.disabled=true;
+  try{
+    const r=await fetch('/api/shop/paypal/create',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({num})});
+    const d=await r.json();
+    if(r.ok && d.approveUrl){ location.href=d.approveUrl; return; }
+    toast('PayPal 暂不可用：'+(d.error||r.status),'err');
+  }catch(e){ toast('网络异常','err'); }
+  btn.disabled=false;
+}
+/* PayPal 收银台回跳：/?pp=capture&num=LMxxx&TOKEN=… → 服务端请款 */
+(function ppReturn(){
+  const q=new URLSearchParams(location.search);
+  if(q.get('pp')!=='capture') return;
+  const num=q.get('num')||'';
+  if(!num) return;
+  history.replaceState(null,'',location.pathname);
+  (async()=>{
+    await meInit();
+    if(!me){ openOnly('authPanel'); toast('登录后完成支付确认','ok'); return; }
+    openOnly('ordersPanel');
+    $('#ordersStatus').textContent='正在向 PayPal 确认支付…';
+    const r=await fetch('/api/shop/paypal/capture',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({num})});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok&&d.ok){ toast('支付成功，订单 '+num+' 已确认','ok'); }
+    else toast('支付确认未完成：'+(d.error||r.status)+'（订单保留，可稍后重试或改汇款）','err');
+    loadOrders();
+  })();
+})();
+
+async function meInit(){
+  try{
+    const r=await fetch('/api/shop/me',{credentials:'same-origin'});
+    if(r.ok){ const d=await r.json(); me=d.customer||null; }
+  }catch(e){}
+  afterAuth();
+}
+
+/* ---- 管理端：商城面板（X-Admin-Key 走统一 api()） ---- */
+let saTab='orders', saOrders=[], saCustomers=[];
+function saStatus(t,cls){ const s=$('#saStatus'); s.textContent=t; s.className='ai-status '+(cls||''); }
+$('#shopAdminToggle').onclick=()=>{
+  const on=$('#shopAdminPanel').hidden;
+  if(on){ $('#verPanel').hidden=true; $('#stylePanel').hidden=true; $('#draftPanel').hidden=true; $('#inqPanel').hidden=true; loadShopAdmin(); }
+  $('#shopAdminPanel').hidden=!on;
+};
+$('#saClose').onclick=()=>{ $('#shopAdminPanel').hidden=true; };
+$('#saRefresh').onclick=loadShopAdmin;
+[['saTabOrders','orders'],['saTabCustomers','customers'],['saTabSettings','settings']].forEach(([id,k])=>{
+  $('#'+id).onclick=()=>{ saTab=k;
+    ['saTabOrders','saTabCustomers','saTabSettings'].forEach(x=>$('#'+x).classList.remove('on'));
+    $('#'+id).classList.add('on');
+    $('#saOrders').hidden=k!=='orders'; $('#saCustomers').hidden=k!=='customers'; $('#saSettings').hidden=k!=='settings';
+  };
+});
+async function loadShopAdmin(){ saStatus('读取中…'); await Promise.all([loadSaOrders(),loadSaCustomers(),loadSaSettings()]); saStatus(''); }
+async function loadSaOrders(){
+  try{
+    const r=await api('/shop-admin/orders');
+    if(r.status===401){ saStatus('管理密钥错误，请重新登录 /admin.html','err'); return; }
+    const d=await r.json(); saOrders=d.orders||[]; renderSaOrders();
+  }catch(e){ saStatus('订单读取失败','err'); }
+}
+function renderSaOrders(){
+  const box=$('#saOrderList'); box.innerHTML='';
+  if(!saOrders.length){ box.innerHTML='<div class="ai-status">暂无订单。</div>'; return; }
+  for(const o of saOrders){
+    const div=document.createElement('div'); div.className='so-row';
+    const who=(o.customer&&o.customer.email)||'—';
+    const comp=o.customer&&o.customer.company?('<br>'+esc(o.customer.company)):'';
+    div.innerHTML=`<span class="num">${esc(o.num)}<br><small style="color:var(--muted)">${esc((o.created_at||'').slice(0,16))}</small></span>
+      <span>${esc(who)}${comp}<br><small style="color:var(--muted)">${esc(o.pay_method||'')} ${esc(o.ship_country||'')}</small></span>
+      <span><b>$${esc(o.total)}</b></span>
+      <span><select>${ORDER_STATUSES.map(s=>`<option value="${s}" ${s===o.status?'selected':''}>${ST_ZH[s]||s}</option>`).join('')}</select></span>
+      <span class="so-act"></span>`;
+    const sel=div.querySelector('select');
+    sel.onchange=async()=>{
+      sel.disabled=true;
+      const r=await api('/shop-admin/orders/status',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({num:o.num,status:sel.value})});
+      const d=await r.json().catch(()=>({}));
+      if(r.ok&&d.ok) loadSaOrders(); else { alert(d.error||'更新失败'); sel.disabled=false; }
+    };
+    const act=div.querySelector('.so-act');
+    if(o.status==='awaiting_confirmation'||(o.status==='pending_payment'&&o.pay_method==='wire')){
+      const b=document.createElement('button'); b.textContent='标记已收款';
+      b.onclick=async()=>{
+        const ref=prompt('到账流水号/参考号（可留空）：','')||'';
+        b.disabled=true;
+        const r=await api('/shop-admin/orders/confirm-paid',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({num:o.num,pay_ref:ref})});
+        if(r.ok) loadSaOrders(); else { const d=await r.json().catch(()=>({})); alert(d.error||'操作失败'); b.disabled=false; }
+      };
+      act.appendChild(b);
+    }
+    if(o.receipt){ const s=document.createElement('small'); s.style.cssText='display:block;color:#8367b5;font-size:11px';
+      s.textContent='回执：'+o.receipt; div.querySelector('span:nth-child(2)').appendChild(s); }
+    box.appendChild(div);
+  }
+}
+const ORDER_STATUSES=['pending_payment','awaiting_confirmation','paid','processing','shipped','delivered','cancelled','refunded'];
+async function loadSaCustomers(){
+  try{
+    const r=await api('/shop-admin/customers'); if(!r.ok) return;
+    saCustomers=(await r.json()).customers||[];
+    const box=$('#saCustomerList'); box.innerHTML='';
+    if(!saCustomers.length){ box.innerHTML='<div class="ai-status">还没有注册客户。</div>'; return; }
+    for(const c of saCustomers){
+      const div=document.createElement('div'); div.className='so-row';
+      div.style.gridTemplateColumns='150px 1fr 110px 90px';
+      div.innerHTML=`<span>${esc((c.email||'').slice(0,28))}</span><span>${esc(c.name||'')} ${esc(c.country||'')}${c.company?(' · '+esc(c.company)):''}</span><span>${c.order_count||0} 单</span><span>$${esc(c.paid||'0.00')}</span>`;
+      box.appendChild(div);
+    }
+  }catch(e){}
+}
+async function loadSaSettings(){
+  // 汇款设置从公开接口读（管理端没有单独 GET，公开接口已脱敏）
+  try{
+    const r=await fetch('/api/shop/payment-config'); if(r.ok){ const d=await r.json(); const w=d.wire||{};
+      $('#saWireOn').checked=!!w.enabled; $('#saWireName').value=w.account_name||'';
+      $('#saWireBank').value=w.bank_name||''; $('#saWireNo').value=w.account_no||''; $('#saWireNote').value=w.note||''; }
+  }catch(e){}
+  try{
+    const r=await api('/shop-admin/settings'); if(r.ok){ const d=await r.json();
+      $('#saPpState').textContent='当前：Client ID '+(d.paypal_client_id?'已配置':'未配置')+
+        ' · Secret '+(d.paypal_secret?'已配置':'未配置')+' · 环境 '+(d.paypal_env||'sandbox')+
+        ' · 通知邮箱 '+(d.shop_notify_email?'已配置':'未配置');
+      $('#saPpEnv').value=d.paypal_env||'sandbox';
+    }
+  }catch(e){}
+}
+$('#saWireSave').onclick=async()=>{
+  const btn=$('#saWireSave'); btn.disabled=true;
+  const r=await api('/shop-admin/wire-config',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({enabled:$('#saWireOn').checked,account_name:$('#saWireName').value.trim(),
+      bank_name:$('#saWireBank').value.trim(),account_no:$('#saWireNo').value.trim(),note:$('#saWireNote').value.trim()})});
+  btn.disabled=false;
+  saStatus(r.ok?'汇款收款设置已保存':'保存失败',r.ok?'ok':'err');
+};
+$('#saPpSave').onclick=async()=>{
+  const btn=$('#saPpSave'); btn.disabled=true;
+  const body={paypal_env:$('#saPpEnv').value};
+  const cid=$('#saPpCid').value.trim(); const sec=$('#saPpSec').value.trim();
+  if(cid) body.paypal_client_id=cid;
+  if(sec) body.paypal_secret=sec;
+  const r=await api('/shop-admin/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r.ok){ $('#saPpCid').value=''; $('#saPpSec').value=''; loadSaSettings(); }
+  btn.disabled=false;
+};
+$('#saMailSave').onclick=async()=>{
+  const btn=$('#saMailSave'); btn.disabled=true;
+  const r=await api('/shop-admin/settings',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({shop_notify_email:$('#saNotify').value.trim(),shop_from_email:$('#saFrom').value.trim()})});
+  btn.disabled=false;
+  saStatus(r.ok?'邮件设置已保存（需 Worker 绑定 Cloudflare Email 才会真正发信）':'保存失败',r.ok?'ok':'err');
+};
+
+/* 启动：登录态 + 购物车徽章 +（如有）PayPal 回跳在 ppReturn 里已处理 */
+paintCartBadge();
+meInit();
 
 load();
 loadContent();
