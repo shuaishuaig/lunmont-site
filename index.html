@@ -747,7 +747,7 @@ async function saveContent(){
   try{
     const r = await api('/content',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({content,note:'直接改字保存'})});
-    if(r.status === 401){ setContentStatus('管理密钥错误，请重新登录 /admin','err'); return; }
+    if(r.status === 401){ setContentStatus('管理密钥错误，请重新登录 /admin.html','err'); return; }
     const d = await r.json().catch(()=>({}));
     if(!r.ok) throw new Error(d.detail || d.error || r.status);
     contentCache = content; contentBaseline = content;
@@ -1098,7 +1098,7 @@ async function aiRun(){
       const r=await api('/ai-edit',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({marks:aiMarks,hint})});
       const d=await r.json().catch(()=>({}));
-      if(r.status===401) throw new Error('管理密钥错误，请重新登录 /admin');
+      if(r.status===401) throw new Error('管理密钥错误，请重新登录 /admin.html');
       if(!r.ok) throw new Error((d.error||d.detail||r.status) +
         (d.rejected&&d.rejected.length ? '（已拦截：'+d.rejected.join('；')+'）' : ''));
       aiRejected=d.rejected||[];
@@ -1235,7 +1235,7 @@ async function loadVersions(){
   try{
     const r=await api('/content/versions');
     const d=await r.json().catch(()=>({}));
-    if(r.status===401){ setVerStatus('管理密钥错误，请重新登录 /admin','err'); return; }
+    if(r.status===401){ setVerStatus('管理密钥错误，请重新登录 /admin.html','err'); return; }
     if(!r.ok) throw new Error(d.error||d.detail||r.status);
     VER_LIST=d.versions||[]; renderVersions();
     setVerStatus('共 '+VER_LIST.length+' 个版本','ok');
@@ -1318,7 +1318,7 @@ async function loadDraft(){
   try{
     const r=await api('/content/draft');
     const d=await r.json().catch(()=>({}));
-    if(r.status===401){ setDraftStatus('管理密钥错误，请重新登录 /admin','err'); return; }
+    if(r.status===401){ setDraftStatus('管理密钥错误，请重新登录 /admin.html','err'); return; }
     if(!r.ok) throw new Error(d.error||d.detail||r.status);
     if(seq!==draftLoadSeq) return;   // 陈旧响应：不覆盖用户刚存/刚丢弃的草稿状态
     DRAFT=d.hasDraft ? d.draft : null;
@@ -1340,7 +1340,7 @@ async function saveDraft(){
     const r=await api('/content/draft',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({content,note:'手动存为草稿'})});
     const d=await r.json().catch(()=>({}));
-    if(r.status===401) throw new Error('管理密钥错误，请重新登录 /admin');
+    if(r.status===401) throw new Error('管理密钥错误，请重新登录 /admin.html');
     if(!r.ok) throw new Error(d.error||d.detail||r.status);
     draftLoadSeq++;
     DRAFT={content,note:'手动存为草稿',updated_at:'刚刚'};
@@ -1684,7 +1684,7 @@ async function saveStyles(){
     const r=await api('/styles',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({styles:styleDraft})});
     const d=await r.json().catch(()=>({}));
-    if(r.status===401) throw new Error('管理密钥错误，请重新登录 /admin');
+    if(r.status===401) throw new Error('管理密钥错误，请重新登录 /admin.html');
     if(!r.ok) throw new Error(d.error||d.detail||r.status);
     styleLive=cloneStyles(styleDraft);
     applyStyles(styleLive);
@@ -2254,7 +2254,7 @@ $('#uploadBtn').onclick = async ()=>{
     }catch(e){ fail++; }
   }
   btn.disabled=false; $('#files').value='';
-  if(auth){ setStatus('管理密钥错误，请重新登录 /admin','err'); }
+  if(auth){ setStatus('管理密钥错误，请重新登录 /admin.html','err'); }
   else if(fail) setStatus(`成功 ${ok} 张（其中 ${upd} 张为更新），失败 ${fail} 张（图片可能过大，请换小图重试）`,'err');
   else setStatus(`成功 ${ok} 张 ✅` + (upd? `（${upd} 张同名已更新，未重复添加）`:''),'ok');
   if(ok) load();
@@ -2266,7 +2266,7 @@ async function enterEditMode(){
   if(editMode) return;
   if(!adminKey()){
     // 没登录态：把人送回登录页，绝不在首页弹密钥框
-    location.replace('/admin');
+    location.replace('/admin.html');
     return;
   }
   editMode=true;
@@ -2339,7 +2339,7 @@ function exitEditMode(){
     if(want) history.replaceState(null,'',u.pathname + (u.search||'') + u.hash);
   } catch(e){}
   if(!want) return;
-  if(!adminKey()){ location.replace('/admin'); return; }
+  if(!adminKey()){ location.replace('/admin.html'); return; }
   enterEditMode();
 })();
 
