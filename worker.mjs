@@ -1288,19 +1288,23 @@ export default {
         if (!name) return json({ error: 'name required' }, 400);
         const exist = await env.DB.prepare('SELECT id FROM customers WHERE email=?').bind(email).first();
         if (exist) return json({ error: 'email already registered' }, 409);
-        const salt = saltHex();
-        const hash = await hashPassword(pass, salt);
-        const company = String((body && body.company) || '').trim().slice(0, 160);
-        const country = String((body && body.country) || '').trim().slice(0, 60);
-        const phone = String((body && body.phone) || '').trim().slice(0, 60);
-        const ins = await env.DB.prepare(
-          'INSERT INTO customers (email, pass_hash, pass_salt, name, company, country, phone) ' +
-          'VALUES (?, ?, ?, ?, ?, ?, ?)'
-        ).bind(email, hash, salt, name, company, country, phone).run();
-        const cid = ins.meta && ins.meta.last_row_id;
-        const token = cid ? await createSession(env, cid) : '';
-        return json({ ok: true, customer: { id: cid, email, name, company, country, phone } },
-                    201, token ? [sessionCookie(token, SESSION_DAYS)] : []);
+        try {
+          const salt = saltHex();
+          const hash = await hashPassword(pass, salt);
+          const company = String((body && body.company) || '').trim().slice(0, 160);
+          const country = String((body && body.country) || '').trim().slice(0, 60);
+          const phone = String((body && body.phone) || '').trim().slice(0, 60);
+          const ins = await env.DB.prepare(
+            'INSERT INTO customers (email, pass_hash, pass_salt, name, company, country, phone) ' +
+            'VALUES (?, ?, ?, ?, ?, ?, ?)'
+          ).bind(email, hash, salt, name, company, country, phone).run();
+          const cid = ins.meta && ins.meta.last_row_id;
+          const token = cid ? await createSession(env, cid) : '';
+          return json({ ok: true, customer: { id: cid, email, name, company, country, phone } },
+                      201, token ? [sessionCookie(token, SESSION_DAYS)] : []);
+        } catch (e) {
+          return json({ error: 'register failed', detail: String(e && e.stack || e && e.message || e).slice(0, 300) }, 500);
+        }
       }
 
       // 登录：限速 + 恒定时间比较；成功轮换会话
