@@ -643,8 +643,10 @@ async function hashPassword(password, salt) {
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
   const saltBytes = Uint8Array.from(salt.match(/.{2}/g).map(h => parseInt(h, 16)));
+  // ⚠️ Cloudflare Workers 的 WebCrypto 上限：PBKDF2 iterations ≤ 100000（超了直接
+  // NotSupportedError 抛穿整个 Worker → CF 1101）。不要"更安全"地调大数字。
   const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt: saltBytes, iterations: 120000, hash: 'SHA-256' }, key, 256);
+    { name: 'PBKDF2', salt: saltBytes, iterations: 100000, hash: 'SHA-256' }, key, 256);
   return hexOf(bits);
 }
 
@@ -1303,7 +1305,7 @@ export default {
           return json({ ok: true, customer: { id: cid, email, name, company, country, phone } },
                       201, token ? [sessionCookie(token, SESSION_DAYS)] : []);
         } catch (e) {
-          return json({ error: 'register failed', detail: String(e && e.stack || e && e.message || e).slice(0, 300) }, 500);
+          return json({ error: 'register failed', detail: String(e && e.message || e).slice(0, 160) }, 500);
         }
       }
 
