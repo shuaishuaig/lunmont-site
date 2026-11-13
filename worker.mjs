@@ -665,6 +665,10 @@ export default {
     const route = path.slice(4); // after /api
 
     if (route === '/products' && method === 'GET') {
+      // ⚠️ 必须先跑迁移：变体列（parent_sku/color/color2/pattern）只在 ensureProducts 里补，
+      // 之前 GET 不调用它 → 新列永远不存在 → 下面的 SELECT 报错 → 静默降级成老字段。
+      // 迁移失败也绝不阻塞出数据：catch 住继续走老查询。
+      try { await ensureProducts(env); } catch (e) { /* 迁移失败：下面自动降级 */ }
       // 绝不 SELECT 迁移中才补的列（updated_at 曾因 SQLite 限制加不上，
       // 一条 SELECT 报错就被 catch 成空数组 —— 首页产品区会整体消失，且完全静默）
       let rows = [];
