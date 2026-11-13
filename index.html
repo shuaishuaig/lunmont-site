@@ -491,7 +491,6 @@
   <div class="links sans">
     <a href="#products" data-content-key="nav_products">产品展示</a>
     <a href="#contact" data-content-key="nav_contact">联系我们</a>
-    <a id="editToggle">管理模式</a>
   </div>
 </nav>
 
@@ -519,7 +518,7 @@
     <h2 data-content-key="products_title">产品系列</h2>
   </div>
   <div class="loading sans" id="loading">正在加载产品…</div>
-  <div class="empty sans" id="empty" style="display:none" data-content-key="empty_text">暂无产品。进入「管理模式」上传你的产品图片即可自动生成卡片。</div>
+  <div class="empty sans" id="empty" style="display:none" data-content-key="empty_text">暂无产品，请稍后再看或直接联系我们。</div>
   <div class="error sans" id="error" style="display:none">产品加载失败，请刷新重试。</div>
 
   <!-- 分类归纳：顶部筛选条 + 已选条件回显 -->
@@ -748,7 +747,7 @@ async function saveContent(){
   try{
     const r = await api('/content',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({content,note:'直接改字保存'})});
-    if(r.status === 401){ setContentStatus('管理密钥错误，请退出管理模式重新输入','err'); return; }
+    if(r.status === 401){ setContentStatus('管理密钥错误，请重新登录 /admin','err'); return; }
     const d = await r.json().catch(()=>({}));
     if(!r.ok) throw new Error(d.detail || d.error || r.status);
     contentCache = content; contentBaseline = content;
@@ -1099,7 +1098,7 @@ async function aiRun(){
       const r=await api('/ai-edit',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({marks:aiMarks,hint})});
       const d=await r.json().catch(()=>({}));
-      if(r.status===401) throw new Error('管理密钥错误，请退出管理模式重新输入');
+      if(r.status===401) throw new Error('管理密钥错误，请重新登录 /admin');
       if(!r.ok) throw new Error((d.error||d.detail||r.status) +
         (d.rejected&&d.rejected.length ? '（已拦截：'+d.rejected.join('；')+'）' : ''));
       aiRejected=d.rejected||[];
@@ -1236,7 +1235,7 @@ async function loadVersions(){
   try{
     const r=await api('/content/versions');
     const d=await r.json().catch(()=>({}));
-    if(r.status===401){ setVerStatus('管理密钥错误，请退出管理模式重新输入','err'); return; }
+    if(r.status===401){ setVerStatus('管理密钥错误，请重新登录 /admin','err'); return; }
     if(!r.ok) throw new Error(d.error||d.detail||r.status);
     VER_LIST=d.versions||[]; renderVersions();
     setVerStatus('共 '+VER_LIST.length+' 个版本','ok');
@@ -1319,7 +1318,7 @@ async function loadDraft(){
   try{
     const r=await api('/content/draft');
     const d=await r.json().catch(()=>({}));
-    if(r.status===401){ setDraftStatus('管理密钥错误，请退出管理模式重新输入','err'); return; }
+    if(r.status===401){ setDraftStatus('管理密钥错误，请重新登录 /admin','err'); return; }
     if(!r.ok) throw new Error(d.error||d.detail||r.status);
     if(seq!==draftLoadSeq) return;   // 陈旧响应：不覆盖用户刚存/刚丢弃的草稿状态
     DRAFT=d.hasDraft ? d.draft : null;
@@ -1341,7 +1340,7 @@ async function saveDraft(){
     const r=await api('/content/draft',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({content,note:'手动存为草稿'})});
     const d=await r.json().catch(()=>({}));
-    if(r.status===401) throw new Error('管理密钥错误，请退出管理模式重新输入');
+    if(r.status===401) throw new Error('管理密钥错误，请重新登录 /admin');
     if(!r.ok) throw new Error(d.error||d.detail||r.status);
     draftLoadSeq++;
     DRAFT={content,note:'手动存为草稿',updated_at:'刚刚'};
@@ -1685,7 +1684,7 @@ async function saveStyles(){
     const r=await api('/styles',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({styles:styleDraft})});
     const d=await r.json().catch(()=>({}));
-    if(r.status===401) throw new Error('管理密钥错误，请退出管理模式重新输入');
+    if(r.status===401) throw new Error('管理密钥错误，请重新登录 /admin');
     if(!r.ok) throw new Error(d.error||d.detail||r.status);
     styleLive=cloneStyles(styleDraft);
     applyStyles(styleLive);
@@ -2255,61 +2254,94 @@ $('#uploadBtn').onclick = async ()=>{
     }catch(e){ fail++; }
   }
   btn.disabled=false; $('#files').value='';
-  if(auth){ setStatus('管理密钥错误，请退出管理模式重新输入','err'); }
+  if(auth){ setStatus('管理密钥错误，请重新登录 /admin','err'); }
   else if(fail) setStatus(`成功 ${ok} 张（其中 ${upd} 张为更新），失败 ${fail} 张（图片可能过大，请换小图重试）`,'err');
   else setStatus(`成功 ${ok} 张 ✅` + (upd? `（${upd} 张同名已更新，未重复添加）`:''),'ok');
   if(ok) load();
 };
 
-$('#editToggle').onclick=async()=>{
-  if(!editMode){
-    if(!adminKey()){
-      const k = prompt('请输入管理密钥：');
-      if(!k) return;
-      sessionStorage.setItem('lunmont_admin_key', k.trim());
-    }
-    editMode=true;
-    $('#editToggle').textContent='退出管理';
-  } else {
-    editMode=false;
-    sessionStorage.removeItem('lunmont_admin_key');
-    $('#editToggle').textContent='管理模式';
+/* 管理模式进入 / 退出。入口改为「/admin 登录页」或带 ?admin=1 —— 首页不再有可见入口，
+   真正的鉴权在服务端（写接口一律校验 X-Admin-Key），这里只负责切换编辑态。 */
+async function enterEditMode(){
+  if(editMode) return;
+  if(!adminKey()){
+    // 没登录态：把人送回登录页，绝不在首页弹密钥框
+    location.replace('/admin');
+    return;
   }
-  document.body.classList.toggle('edit-on', editMode);
-  $('#editBar').hidden = !editMode;
-  if(!editMode && pickMode) setPickMode(false);
-  setEditable(editMode && !pickMode);
-  if(!editMode){ textSel=null; stylePickMode=false; syncStylePick(); }
+  editMode=true;
+  document.body.classList.add('edit-on');
+  $('#editBar').hidden = false;
+  if(pickMode) setPickMode(false);
+  setEditable(!pickMode);
   paintSelBar();
-  if(editMode){
-    primeSeo();
-    paintBlockLabels();
-    loadDraft();
-    // baseline 同步取，别等异步读取；用户一动手 input 监听会把 seq 推高，晚到响应即作废
-    contentBaseline = snapshotContent();
-    setContentStatus('正在读取最新文案…');
-    const seq = ++contentLoadSeq;
-    const fresh = await loadContent(seq);
-    if(seq === contentLoadSeq){
-      if(fresh) contentBaseline = snapshotContent();
-      setContentStatus('点页面文字直接改，改完点「保存文案」');
-    }
-  } else {
-    contentLoadSeq++;
-    closeDraftPreview();
-    $('#verPanel').hidden=true;
-    if(verPreviewing!==null) backToCurrent();
-    // 退出管理模式：样式面板收起，未保存的样式改动一律丢弃（基线 = 已保存版本）
-    $('#stylePanel').hidden=true;
-    $('#inqPanel').hidden=true;
-    styleDraft=cloneStyles(styleLive); applyStyles(styleLive); styleTarget=null;
-    draftLoadSeq++;
-    DRAFT=null; renderDraft();
-    if(contentBaseline) applyContent(contentBaseline);
-    setContentStatus('');
+  primeSeo();
+  paintBlockLabels();
+  loadDraft();
+  // baseline 同步取，别等异步读取；用户一动手 input 监听会把 seq 推高，晚到响应即作废
+  contentBaseline = snapshotContent();
+  setContentStatus('正在读取最新文案…');
+  const seq = ++contentLoadSeq;
+  const fresh = await loadContent(seq);
+  if(seq === contentLoadSeq){
+    if(fresh) contentBaseline = snapshotContent();
+    setContentStatus('点页面文字直接改，改完点「保存文案」');
   }
   load();
-};
+}
+
+function exitEditMode(){
+  editMode=false;
+  sessionStorage.removeItem('lunmont_admin_key');
+  document.body.classList.remove('edit-on');
+  $('#editBar').hidden = true;
+  if(pickMode) setPickMode(false);
+  setEditable(false);
+  textSel=null; stylePickMode=false; syncStylePick();
+  paintSelBar();
+  contentLoadSeq++;
+  closeDraftPreview();
+  $('#verPanel').hidden=true;
+  if(verPreviewing!==null) backToCurrent();
+  // 退出管理模式：样式面板收起，未保存的样式改动一律丢弃（基线 = 已保存版本）
+  $('#stylePanel').hidden=true;
+  $('#inqPanel').hidden=true;
+  styleDraft=cloneStyles(styleLive); applyStyles(styleLive); styleTarget=null;
+  draftLoadSeq++;
+  DRAFT=null; renderDraft();
+  if(contentBaseline) applyContent(contentBaseline);
+  setContentStatus('');
+  load();
+  // 退出后清掉 ?admin=1，避免刷新又进编辑态、也不留可被分享的地址
+  try { history.replaceState(null,'',location.pathname + location.hash); } catch(e){}
+}
+
+/* 编辑条上的「退出管理」按钮（首页 nav 已无入口，退出只能从这里或关标签页） */
+(function(){
+  const bar = $('#editBar');
+  if(!bar) return;
+  const b = document.createElement('button');
+  b.type='button'; b.className='ghost'; b.id='exitAdmin'; b.textContent='退出管理';
+  bar.appendChild(b);
+  b.onclick = exitEditMode;
+})();
+
+/* 自动识别登录态：
+   ① URL 带 ?admin=1（登录页跳回来的）→ 有 sessionStorage 密钥就进编辑态
+   ② 直接访问 /admin 进来的老用户 → 同上
+   ③ 无 ?admin 且无密钥 → 完全静默，访客看不到任何管理痕迹 */
+(function(){
+  let want = false;
+  try {
+    const u = new URL(location.href);
+    want = u.searchParams.get('admin') === '1';
+    if(want) u.searchParams.delete('admin');
+    if(want) history.replaceState(null,'',u.pathname + (u.search||'') + u.hash);
+  } catch(e){}
+  if(!want) return;
+  if(!adminKey()){ location.replace('/admin'); return; }
+  enterEditMode();
+})();
 
 /* 悬停时刷新尺寸标注；标签走 data-block-label 伪元素，绝不进 innerText */
 document.addEventListener('mouseover', e=>{
