@@ -22,9 +22,17 @@ const SCHEMA = `CREATE TABLE IF NOT EXISTS products (
 const PRODUCTS_DDL = [
   "ALTER TABLE products ADD COLUMN sku TEXT DEFAULT ''",
   "ALTER TABLE products ADD COLUMN ukey TEXT DEFAULT ''",
-  "ALTER TABLE products ADD COLUMN updated_at TEXT"
+  "ALTER TABLE products ADD COLUMN updated_at TEXT",
+  // 变体分组：同一产品不同花色/颜色共用一个 parent_sku（= 产品卡键）。
+  // 空串表示「独立成卡」（老数据行为，绝不改变已有卡片数量）。
+  "ALTER TABLE products ADD COLUMN parent_sku TEXT DEFAULT ''",
+  // 色点两色 + 是否双色纹路（碎花/豹纹/条纹）。由 tools/_extract_sku_colors.py 从产品图实测得出，
+  // 前端色点模式直接吃这三个值，不再靠色名猜色。
+  "ALTER TABLE products ADD COLUMN color TEXT DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN color2 TEXT DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN pattern INTEGER DEFAULT 0"
 ];
-const PRODUCTS_MIGRATION_KEY = 'products_v3';
+const PRODUCTS_MIGRATION_KEY = 'products_v4';
 let productsReady = false;
 
 // 稳定业务键：有 sku 用 sku（产品改了名/换了图也认得出来），否则用 名称+分类。
@@ -291,6 +299,8 @@ async function ensureStyles(env) {
 }
 
 // products 迁移（只做一次，用 settings 标记位判定，避免每次冷启动都跑）。
+// 版本号 = PRODUCTS_MIGRATION_KEY：每次要给 products 加列都必须升版本，
+// 否则标记已存在 → 补列被跳过 → SELECT 新列报错 → 被 catch 成空数组（产品区整块消失且静默）。
 // 步骤：建表 → 补列 → 按 productKey 回填 ukey → 尽力建唯一索引。
 // ⚠️ 迁移里**绝不删数据**：历史重复只统计进 settings 供 /products/dedupe 预览，
 // 真正删除必须人来显式调用（默认 dryRun）。删行放在自动迁移里=一次判重口径失误就清库。
@@ -306,10 +316,17 @@ async function ensureProducts(env) {
     try { await env.DB.prepare(ddl).run(); } catch (e) { /* 列已存在：忽略 */ }
   }
 
-  // 补列可能部分失败：先确认四列（含 updated_at）都能读，读不到就抛出去
-  // —— 宁可不设标记也不能谎报迁移成功（否则标记=1 后永远补不上缺的列）
-  const all = await env.DB.prepare('SELECT id, name, category, sku, image, ukey, updated_at FROM products').all();
+  // 补列可能部分失败：先确认所有列都能读（含 updated_at 与变体三列），读不到就抛出去
+  // —— 宁可不设标记也不能谎报迁移成功（否则标记=1 后永远补不上缺的列）。
+  // 注意这里用 SELECT * 不写死列名，缺列时 SQLite 也不会因此报错。
+  const all = await env.DB.prepare('SELECT * FROM products').all();
   const rows = all.results || [];
+  const cols = rows.length ? Object.keys(rows[0]) : [];
+  if (rows.length) {
+    for (const need of ['updated_at', 'parent_sku', 'color', 'color2', 'pattern']) {
+      if (cols.indexOf(need) < 0) throw new Error('products migration incomplete: missing column ' + need);
+    }
+  }
   const backfill = [];
   for (const p of rows) {
     // 已有 sku 键的行不动；空键/老键按 backfillKey 归一（图片优先，避免重名塌缩）
@@ -317,7 +334,6 @@ async function ensureProducts(env) {
     if (p.ukey !== k) backfill.push(env.DB.prepare('UPDATE products SET ukey=? WHERE id=?').bind(k, p.id));
   }
   if (backfill.length) await env.DB.batch(backfill);
-
   // 只统计、不删除；有重复时索引建不上，应用层 upsert 仍然能保证不新增
   let dupes = 0;
   try {
@@ -349,16 +365,28 @@ async function dupeReport(env) {
 }
 
 // 单条产品入参清洗：字段截断 + 图片格式/体积校验，返回 ukey 供 upsert 判重
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+function cleanColor(v) {
+  const s = String(v || '').trim();
+  return HEX_RE.test(s) ? s.toLowerCase() : '';
+}
 function cleanProduct(body) {
   const name = String((body && body.name) || '').trim().slice(0, 120);
   const category = String((body && body.category) || '').trim().slice(0, 60);
   const image = String((body && body.image) || '');
   const sku = String((body && body.sku) || '').trim().slice(0, 80);
+  // 变体分组键：空 = 独立成卡。只允许 sku 形态，避免脏值把不相干的行并成一张卡。
+  const parent = String((body && body.parent_sku) || '').trim().slice(0, 80);
+  const parent_sku = (parent && parent !== sku) ? parent : '';
+  const color = cleanColor(body && body.color);
+  const color2 = cleanColor(body && body.color2) || color;
+  const pattern = (body && (body.pattern === 1 || body.pattern === true)) ? 1 : 0;
   if (!name) return { error: 'name required', status: 400 };
   if (!image.startsWith('data:image/') && !/^https?:\/\//.test(image))
     return { error: 'image must be data URL or http(s) URL', status: 400 };
   if (image.length > MAX_IMAGE) return { error: 'image too large', status: 413 };
-  return { name, category, image, sku, ukey: productKey({ sku, name, category }) };
+  return { name, category, image, sku, ukey: productKey({ sku, name, category }),
+           parent_sku, color, color2, pattern };
 }
 
 // 批量幂等写入：一次读全表判重 + 一次 DB.batch 提交，2 个往返搞定任意条数。
@@ -366,11 +394,16 @@ function cleanProduct(body) {
 // 同样带「接管」：sku: 键没命中时用 nm: 键找历史行，命中就原地改写键，绝不新增。
 async function upsertMany(env, items) {
   // ORDER BY id：同键多行（历史重复）时 Map 后写覆盖，命中的是最新那条
-  const all = await env.DB.prepare('SELECT id, name, category, image, sku, ukey FROM products ORDER BY id').all();
+  const all = await env.DB.prepare(
+    'SELECT id, name, category, image, sku, ukey, parent_sku, color, color2, pattern FROM products ORDER BY id'
+  ).all();
   const cur = new Map();
   for (const p of (all.results || [])) cur.set(p.ukey, p);
   let created = 0, updated = 0, unchanged = 0, adopted = 0;
   const stmts = [];
+  const sameVariant = (ex, it) =>
+    (ex.parent_sku || '') === it.parent_sku && (ex.color || '') === it.color &&
+    (ex.color2 || '') === it.color2 && Number(ex.pattern || 0) === Number(it.pattern || 0);
   for (const it of items) {
     let ex = cur.get(it.ukey);
     let adoptFrom = null;
@@ -385,14 +418,18 @@ async function upsertMany(env, items) {
       created++;
       // 不用 ON CONFLICT：唯一索引在「存在历史重复」时建不上，依赖它会让整批插入失败
       stmts.push(env.DB.prepare(
-        "INSERT INTO products (name, category, image, sku, ukey, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'))"
-      ).bind(it.name, it.category, it.image, it.sku, it.ukey));
+        "INSERT INTO products (name, category, image, sku, ukey, parent_sku, color, color2, pattern, updated_at) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))"
+      ).bind(it.name, it.category, it.image, it.sku, it.ukey,
+             it.parent_sku, it.color, it.color2, it.pattern));
       cur.set(it.ukey, { id: -1, name: it.name, category: it.category, image: it.image,
-                         sku: it.sku, ukey: it.ukey });
+                         sku: it.sku, ukey: it.ukey, parent_sku: it.parent_sku,
+                         color: it.color, color2: it.color2, pattern: it.pattern });
       continue;
     }
     const changed = ex.name !== it.name || (ex.category || '') !== it.category ||
-      ex.image !== it.image || (ex.sku || '') !== it.sku || ex.ukey !== it.ukey;
+      ex.image !== it.image || (ex.sku || '') !== it.sku || ex.ukey !== it.ukey ||
+      !sameVariant(ex, it);
     if (adoptFrom) {
       // 同批里两个不同 sku 抢同一历史行时，第二个不能再接管（键已被前一个占掉）
       if (cur.get(it.ukey)) { unchanged++; continue; }
@@ -402,11 +439,14 @@ async function upsertMany(env, items) {
     if (changed) {
       updated++;
       stmts.push(env.DB.prepare(
-        "UPDATE products SET name=?, category=?, image=?, sku=?, ukey=?, updated_at=datetime('now') WHERE ukey=?"
-      ).bind(it.name, it.category, it.image, it.sku, it.ukey, ex.ukey));
+        "UPDATE products SET name=?, category=?, image=?, sku=?, ukey=?, parent_sku=?, color=?, color2=?, " +
+        "pattern=?, updated_at=datetime('now') WHERE ukey=?"
+      ).bind(it.name, it.category, it.image, it.sku, it.ukey,
+             it.parent_sku, it.color, it.color2, it.pattern, ex.ukey));
     } else unchanged++;
     cur.set(it.ukey, { id: ex.id, name: it.name, category: it.category, image: it.image,
-                       sku: it.sku, ukey: it.ukey });
+                       sku: it.sku, ukey: it.ukey, parent_sku: it.parent_sku,
+                       color: it.color, color2: it.color2, pattern: it.pattern });
   }
   if (stmts.length) await env.DB.batch(stmts);
   return { created, updated, unchanged, adopted };
@@ -419,34 +459,41 @@ async function upsertMany(env, items) {
 // 而升级后带 sku 发布算出的是 sku: 键 —— 只按新键查会查不到 → 重复发布反而多出 149 条。
 // 所以新键没命中时，再用 nm: 键找一次，命中就把该行「接管」成 sku: 键（原地更新，不新增）。
 async function upsertProduct(env, item) {
-  let ex = await env.DB.prepare('SELECT id, name, category, image, sku, ukey FROM products WHERE ukey=?')
+  const COLS = 'id, name, category, image, sku, ukey, parent_sku, color, color2, pattern';
+  let ex = await env.DB.prepare('SELECT ' + COLS + ' FROM products WHERE ukey=?')
     .bind(item.ukey).first();
   let adopted = false;
   if (!ex && item.ukey.indexOf('sku:') === 0) {
     for (const lk of adoptKeys(item)) {
       if (lk === item.ukey) continue;
-      const old = await env.DB.prepare('SELECT id, name, category, image, sku, ukey FROM products WHERE ukey=?')
+      const old = await env.DB.prepare('SELECT ' + COLS + ' FROM products WHERE ukey=?')
         .bind(lk).first();
       if (old) { ex = old; adopted = true; break; }
     }
   }
   if (ex) {
     const changed = ex.name !== item.name || (ex.category || '') !== item.category ||
-      ex.image !== item.image || (ex.sku || '') !== item.sku || ex.ukey !== item.ukey;
+      ex.image !== item.image || (ex.sku || '') !== item.sku || ex.ukey !== item.ukey ||
+      (ex.parent_sku || '') !== item.parent_sku || (ex.color || '') !== item.color ||
+      (ex.color2 || '') !== item.color2 || Number(ex.pattern || 0) !== Number(item.pattern || 0);
     if (changed) {
       await env.DB.prepare(
-        "UPDATE products SET name=?, category=?, image=?, sku=?, ukey=?, updated_at=datetime('now') WHERE id=?"
-      ).bind(item.name, item.category, item.image, item.sku, item.ukey, ex.id).run();
+        "UPDATE products SET name=?, category=?, image=?, sku=?, ukey=?, parent_sku=?, color=?, color2=?, " +
+        "pattern=?, updated_at=datetime('now') WHERE id=?"
+      ).bind(item.name, item.category, item.image, item.sku, item.ukey,
+             item.parent_sku, item.color, item.color2, item.pattern, ex.id).run();
     }
     return { id: ex.id, action: changed ? 'updated' : 'unchanged', adopted };
   }
   try {
     const r = await env.DB.prepare(
-      "INSERT INTO products (name, category, image, sku, ukey, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'))"
-    ).bind(item.name, item.category, item.image, item.sku, item.ukey).run();
+      "INSERT INTO products (name, category, image, sku, ukey, parent_sku, color, color2, pattern, updated_at) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))"
+    ).bind(item.name, item.category, item.image, item.sku, item.ukey,
+           item.parent_sku, item.color, item.color2, item.pattern).run();
     return { id: r.meta && r.meta.last_row_id, action: 'created' };
   } catch (e) {
-    // ① 极端情况：updated_at 列还没补上（迁移失败）→ 去掉该列重试，保证写入不瘫
+    // ① 极端情况：变体列还没补上（迁移失败）→ 退回只写基础列，保证写入不瘫
     if (/no such column/i.test(String(e && e.message || e))) {
       const r2 = await env.DB.prepare(
         'INSERT INTO products (name, category, image, sku, ukey) VALUES (?, ?, ?, ?, ?)'
@@ -603,30 +650,77 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    if (!path.startsWith('/api/')) return env.ASSETS.fetch(request);
+    // 静态资源放行 + 补 CORS：产品图要给「色点取色编辑器」用 canvas 读像素，
+    // 没有 Access-Control-Allow-Origin 时 img 能显示但画布被污染，getImageData 全 0。
+    if (!path.startsWith('/api/')) {
+      const res = await env.ASSETS.fetch(request);
+      const isImg = /\.(jpe?g|png|webp|gif|avif|svg)$/i.test(path);
+      if (!isImg) return res;
+      const h = new Headers(res.headers);
+      h.set('Access-Control-Allow-Origin', '*');
+      h.set('Cross-Origin-Resource-Policy', 'cross-origin');
+      // 图片内容不变，缓存策略沿用 assets 层；这里只补 CORS 头
+      return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+    }
     const route = path.slice(4); // after /api
 
     if (route === '/products' && method === 'GET') {
       // 绝不 SELECT 迁移中才补的列（updated_at 曾因 SQLite 限制加不上，
       // 一条 SELECT 报错就被 catch 成空数组 —— 首页产品区会整体消失，且完全静默）
       let rows = [];
+      let hasVariant = true;
       try {
         const r = await env.DB.prepare(
-          'SELECT id, name, category, image, sku FROM products ORDER BY id DESC LIMIT 500'
+          'SELECT id, name, category, image, sku, parent_sku, color, color2, pattern ' +
+          'FROM products ORDER BY id DESC LIMIT 500'
         ).all();
         rows = r.results || [];
       } catch (e) {
-        // 兜底：老 schema 只有四列时也要能出数据
+        hasVariant = false; // 变体列未补齐 -> 退回老查询，产品区照常出数据
         try {
-          const r2 = await env.DB.prepare(
-            'SELECT id, name, category, image FROM products ORDER BY id DESC LIMIT 500'
+          const r = await env.DB.prepare(
+            'SELECT id, name, category, image, sku FROM products ORDER BY id DESC LIMIT 500'
           ).all();
-          rows = r2.results || [];
-        } catch (e2) {
-          return json({ products: [], detail: String(e2 && e2.message || e2).slice(0, 160) }, 200);
+          rows = r.results || [];
+        } catch (e1) {
+          // 兜底：老 schema 只有四列时也要能出数据
+          try {
+            const r2 = await env.DB.prepare(
+              'SELECT id, name, category, image FROM products ORDER BY id DESC LIMIT 500'
+            ).all();
+            rows = r2.results || [];
+          } catch (e2) {
+            return json({ products: [], detail: String(e2 && e2.message || e2).slice(0, 160) }, 200);
+          }
         }
       }
-      const out = { products: rows };
+      const out = { products: rows, grouped: hasVariant };
+      // 变体分组视图：同一 parent_sku 的行收成一张卡（父行自身带图，作为卡片主图）。
+      // parent_sku 为空的行各自独立成卡 —— 老数据行为完全不变。
+      // ?flat=1 返回扁平行（发布对账 / 管理后台用）。
+      if (hasVariant && url.searchParams.get('flat') !== '1') {
+        const byKey = new Map();
+        for (const p of rows) {
+          const key = p.parent_sku ? String(p.parent_sku) : 'row:' + p.id;
+          let card = byKey.get(key);
+          if (!card) {
+            card = { key, parent_sku: p.parent_sku || '', id: p.id, name: p.name,
+                     category: p.category, image: p.image, sku: p.sku, variants: [] };
+            byKey.set(key, card);
+          }
+          card.variants.push({
+            id: p.id, sku: p.sku, image: p.image, name: p.name,
+            color: p.color || '', color2: p.color2 || p.color || '',
+            pattern: Number(p.pattern || 0) === 1
+          });
+        }
+        // 花色名从名称末尾提取（「… 粉红色5.9cm」-> 粉红色5.9cm），前端直接显示
+        for (const card of byKey.values()) {
+          card.variants.forEach(v => { v.label = v.name || v.sku || ''; });
+          card.variant_count = card.variants.length;
+        }
+        out.cards = [...byKey.values()];
+      }
       // ?stats=1 需要 admin：给「发布对账」用，返回总行数/唯一键数/重复组数
       if (url.searchParams.get('stats') === '1') {
         if (!(await checkAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
