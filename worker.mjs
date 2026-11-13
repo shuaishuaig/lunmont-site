@@ -5,7 +5,7 @@
 // 关键：门禁在服务端 —— 所有写接口不论走哪个前端都先过 checkAdmin，
 // 前端登录只决定「能不能拿到输入框」，绝不承担鉴权职责。
 
-// build-tag: 2026-11-13 admin-login-v1 taxonomy-v5 shop-checkout-v1 tier-cust-v1
+// build-tag: 2026-11-13 admin-login-v1 taxonomy-v5 shop-checkout-v1 tier-cust-v1b
 const MAX_IMAGE = 700000; // dataURL char cap, keeps request body < 1MiB
 const MAX_CONTENT_VALUE = 4000;
 
