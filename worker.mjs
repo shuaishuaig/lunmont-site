@@ -1,6 +1,7 @@
 // LUNMONT site worker: static assets + products/content APIs backed by D1.
 // Writes (POST/DELETE) require header X-Admin-Key matching D1 settings.admin_key.
 
+// build-tag: 2026-11-13 variants-migrate-v2
 const MAX_IMAGE = 700000; // dataURL char cap, keeps request body < 1MiB
 const MAX_CONTENT_VALUE = 4000;
 
