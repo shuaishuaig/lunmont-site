@@ -747,25 +747,6 @@ export default {
       return json(out);
     }
 
-    // 临时诊断（admin only）：看 products 表真实列与迁移标记，排障完即删
-    if (route === '/diag' && method === 'GET') {
-      if (!(await checkAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
-      const out = {};
-      try {
-        const r = await env.DB.prepare('SELECT * FROM products LIMIT 1').all();
-        out.cols = r.results && r.results[0] ? Object.keys(r.results[0]) : [];
-      } catch (e) { out.cols_err = String(e && e.message || e).slice(0, 200); }
-      try {
-        const f = await env.DB.prepare("SELECT key, value FROM settings WHERE key LIKE 'products_%'").all();
-        out.flags = f.results || [];
-      } catch (e) { out.flags_err = String(e && e.message || e).slice(0, 200); }
-      try {
-        const c = await env.DB.prepare('SELECT COUNT(*) AS n FROM products').first();
-        out.rows = c && c.n;
-      } catch (e) { out.rows_err = String(e && e.message || e).slice(0, 200); }
-      return json(out);
-    }
-
     if (route === '/content' && method === 'GET') {
       try {
         await ensureContent(env);
