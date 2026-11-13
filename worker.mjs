@@ -5,7 +5,7 @@
 // 关键：门禁在服务端 —— 所有写接口不论走哪个前端都先过 checkAdmin，
 // 前端登录只决定「能不能拿到输入框」，绝不承担鉴权职责。
 
-// build-tag: 2026-11-13 admin-login-v1 taxonomy-v5 shop-checkout-v1
+// build-tag: 2026-11-13 admin-login-v1 taxonomy-v5 shop-checkout-v1 tier-cust-v1
 const MAX_IMAGE = 700000; // dataURL char cap, keeps request body < 1MiB
 const MAX_CONTENT_VALUE = 4000;
 
@@ -576,6 +576,10 @@ function json(body, status = 200, cookies = []) {
      绝不阻塞下单。
 */
 
+// 客户价格档：retail=零售（公开注册默认），wholesale=批发（后台开号/改档）。
+// ⚠️ 档位只影响"看到哪个价"，绝不作为鉴权凭据——鉴权永远是会话本身。
+const TIERS = ['retail', 'wholesale'];
+
 const CUSTOMERS_SCHEMA = `CREATE TABLE IF NOT EXISTS customers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   email TEXT NOT NULL UNIQUE,
@@ -585,8 +589,19 @@ const CUSTOMERS_SCHEMA = `CREATE TABLE IF NOT EXISTS customers (
   company TEXT NOT NULL DEFAULT '',
   country TEXT NOT NULL DEFAULT '',
   phone TEXT NOT NULL DEFAULT '',
+  tier TEXT NOT NULL DEFAULT 'retail',
+  active INTEGER NOT NULL DEFAULT 1,
+  admin_note TEXT NOT NULL DEFAULT '',
   created_at TEXT DEFAULT (datetime('now'))
 )`;
+
+// 老库补列：SQLite 的 ALTER TABLE 一次只能加一列，且**不许非常量默认值**
+// （`DEFAULT (datetime('now'))` 会直接报错）。必须逐条执行，任一条失败不影响其余。
+const CUSTOMERS_DDL = [
+  "ALTER TABLE customers ADD COLUMN tier TEXT NOT NULL DEFAULT 'retail'",
+  'ALTER TABLE customers ADD COLUMN active INTEGER NOT NULL DEFAULT 1',
+  "ALTER TABLE customers ADD COLUMN admin_note TEXT NOT NULL DEFAULT ''"
+];
 
 const SESSIONS_SCHEMA = `CREATE TABLE IF NOT EXISTS cust_sessions (
   token TEXT PRIMARY KEY,
@@ -630,6 +645,11 @@ async function ensureShop(env) {
     env.DB.prepare(SESSIONS_SCHEMA),
     env.DB.prepare(ORDERS_SCHEMA)
   ]);
+  // 老库补列：逐条跑，已存在会抛错，吞掉即可（列已在 = 目标状态已达成）。
+  // 不能塞进上面的 batch：batch 是原子的，一条 ALTER 失败会连带 CREATE 一起回滚。
+  for (const sql of CUSTOMERS_DDL) {
+    try { await env.DB.prepare(sql).run(); } catch (e) { /* 列已存在 */ }
+  }
   shopReady = true;
 }
 
@@ -686,13 +706,19 @@ async function currentCustomer(env, request) {
   if (!/^[0-9a-f]{64}$/.test(token)) return null;
   try {
     const row = await env.DB.prepare(
-      'SELECT s.token, s.expires_at, c.id, c.email, c.name, c.company, c.country, c.phone ' +
+      'SELECT s.token, s.expires_at, c.id, c.email, c.name, c.company, c.country, c.phone, ' +
+      "COALESCE(c.tier,'retail') AS tier, COALESCE(c.active,1) AS active " +
       'FROM cust_sessions s JOIN customers c ON c.id = s.customer_id WHERE s.token=?'
     ).bind(token).first();
     if (!row) return null;
     const exp = Date.parse(String(row.expires_at).replace(' ', 'T') + 'Z');
     if (!isFinite(exp) || exp < Date.now()) {
       await env.DB.prepare('DELETE FROM cust_sessions WHERE token=?').bind(token).run();
+      return null;
+    }
+    // 被后台停用的账户：会话当场作废，不留"停用后还能下单"的口子
+    if (Number(row.active) === 0) {
+      try { await env.DB.prepare('DELETE FROM cust_sessions WHERE token=?').bind(token).run(); } catch (e) {}
       return null;
     }
     return row;
@@ -771,7 +797,8 @@ async function paypalAccessToken(env) {
 }
 
 // 下单核心：客户端下单与购物车结账共用。返回 {error,status} 或订单行。
-async function createOrder(env, customerId, body) {
+// tier 由调用方从登录会话传入（wholesale 才用批发价），绝不从前端 body 取。
+async function createOrder(env, customerId, body, tier) {
   const rawItems = Array.isArray(body && body.items) ? body.items.slice(0, 50) : [];
   const want = [];
   for (const it of rawItems) {
@@ -791,17 +818,30 @@ async function createOrder(env, customerId, body) {
   if (!shipName || !shipAddress) return { error: 'shipping name/address required', status: 400 };
 
   // 服务端重查价格（前端传的价格一概不信）；未定价=不可售
+  // ⚠️ 价格档只能从登录会话读，绝不接受前端传 tier —— 否则零售客自报批发档就能低价下单
   const ids = [...new Set(want.map(w => w.id))];
-  const sql = 'SELECT id, name, sku, image, price FROM products WHERE id IN (' +
+  const useWholesale = String(tier || 'retail') === 'wholesale';
+  let sql = 'SELECT id, name, sku, image, price, price_wholesale FROM products WHERE id IN (' +
     ids.map(() => '?').join(',') + ')';
-  const found = await env.DB.prepare(sql).bind(...ids).all();
+  let found;
+  try {
+    found = await env.DB.prepare(sql).bind(...ids).all();
+  } catch (e) {
+    // price_wholesale 列未补齐：退回零售价查询，保证下单不瘫
+    found = await env.DB.prepare(
+      'SELECT id, name, sku, image, price FROM products WHERE id IN (' +
+      ids.map(() => '?').join(',') + ')'
+    ).bind(...ids).all();
+  }
   const byId = new Map((found.results || []).map(p => [p.id, p]));
   let subtotal = 0;
   const snapshot = [];
   for (const w of want) {
     const p = byId.get(w.id);
     if (!p) return { error: 'product not found: ' + w.id, status: 404 };
-    const cents = Math.round(Number(p.price || 0) * 100);
+    const whole = Number(p.price_wholesale || 0);
+    const unit = (useWholesale && whole > 0) ? whole : Number(p.price || 0);
+    const cents = Math.round(unit * 100);
     if (cents <= 0) return { error: 'product not priced: ' + (p.sku || p.id), status: 400 };
     subtotal += cents * w.qty;
     snapshot.push({ id: p.id, sku: p.sku || '', name: p.name || '', image: p.image || '',
@@ -1088,6 +1128,17 @@ export default {
         }
       }
       const out = { products: rows, grouped: hasVariant, taxonomy: hasTaxonomy };
+      // 批发档客户看到的价格换成 price_wholesale（为 0 时保持零售价）。
+      // 会话探测失败一律当零售客，绝不因为鉴权异常把批发价漏给访客。
+      let viewerTier = 'retail';
+      if (url.searchParams.get('tier') === 'auto') {
+        try {
+          await ensureShop(env);
+          const vc = await currentCustomer(env, request);
+          if (vc && vc.tier === 'wholesale') viewerTier = 'wholesale';
+        } catch (e) { viewerTier = 'retail'; }
+      }
+      out.tier = viewerTier;
       // 变体分组视图：同一 parent_sku 的行收成一张卡（父行自身带图，作为卡片主图）。
       // parent_sku 为空的行各自独立成卡 —— 老数据行为完全不变。
       // ?flat=1 返回扁平行（发布对账 / 管理后台用）。
@@ -1118,6 +1169,14 @@ export default {
           // 卡价 = 各花色里的最低有效价（未定价 0 不参与比较）；全 0 时保持 0=询价
           const pv = Number(p.price || 0);
           if (pv > 0 && (!card.price || pv < card.price)) card.price = pv;
+          const pw = Number(p.price_wholesale || 0);
+          if (pw > 0 && (!card.price_wholesale || pw < card.price_wholesale)) card.price_wholesale = pw;
+        }
+        // 批发档覆盖：接口明确换了价就删掉零售价，避免前端两套价并存导致显示错乱
+        if (viewerTier === 'wholesale') {
+          for (const card of byKey.values()) {
+            if (card.price_wholesale > 0) { card.price = card.price_wholesale; card.tier = 'wholesale'; }
+          }
         }
         // 花色名从名称末尾提取（「… 粉红色5.9cm」-> 粉红色5.9cm），前端直接显示
         for (const card of byKey.values()) {
@@ -1302,7 +1361,8 @@ export default {
           ).bind(email, hash, salt, name, company, country, phone).run();
           const cid = ins.meta && ins.meta.last_row_id;
           const token = cid ? await createSession(env, cid) : '';
-          return json({ ok: true, customer: { id: cid, email, name, company, country, phone } },
+          return json({ ok: true, customer: { id: cid, email, name, company, country, phone,
+                                              tier: 'retail' } },
                       201, token ? [sessionCookie(token, SESSION_DAYS)] : []);
         } catch (e) {
           return json({ error: 'register failed', detail: String(e && e.message || e).slice(0, 160) }, 500);
@@ -1318,15 +1378,20 @@ export default {
         if (!email || !pass) return json({ error: 'email and password required' }, 400);
         if (loginThrottle(ip, email)) return json({ error: 'too many attempts, wait 15 min' }, 429);
         const row = await env.DB.prepare(
-          'SELECT id, email, name, company, country, phone, pass_hash, pass_salt FROM customers WHERE email=?'
+          'SELECT id, email, name, company, country, phone, pass_hash, pass_salt, ' +
+          "COALESCE(tier,'retail') AS tier, COALESCE(active,1) AS active " +
+          'FROM customers WHERE email=?'
         ).bind(email).first();
         if (!row) { loginFailRecord(ip, email); return json({ error: 'invalid credentials' }, 401); }
         const hash = await hashPassword(pass, row.pass_salt || '');
         if (!constEqual(hash, row.pass_hash)) { loginFailRecord(ip, email); return json({ error: 'invalid credentials' }, 401); }
+        // 停用账户：密码对了也不发会话（提示语不区分「没这个号」，只说明停用）
+        if (Number(row.active) === 0) return json({ error: 'account disabled, contact us' }, 403);
         loginFails.delete(ip + '|' + email);
         const token = await createSession(env, row.id);
         return json({ ok: true, customer: { id: row.id, email: row.email, name: row.name,
-                       company: row.company, country: row.country, phone: row.phone } },
+                       company: row.company, country: row.country, phone: row.phone,
+                       tier: String(row.tier || 'retail') } },
                     200, [sessionCookie(token, SESSION_DAYS)]);
       }
 
@@ -1341,8 +1406,10 @@ export default {
       // 当前客户（前端启动时探测登录态）；未登录 200 + null，不 401（避免噪音）
       if (route === '/shop/me' && method === 'GET') {
         if (!cust) return json({ customer: null });
+        // tier 必须回：前端要据此显示「批发价」标识，并按档位决定是否重拉商品换价。
         return json({ customer: { id: cust.id, email: cust.email, name: cust.name,
-                       company: cust.company, country: cust.country, phone: cust.phone } });
+                       company: cust.company, country: cust.country, phone: cust.phone,
+                       tier: String(cust.tier || 'retail') } });
       }
 
       // 收款方式配置（公开只读：结账页要展示万里汇汇款账号 + PayPal 是否可用）。
@@ -1374,7 +1441,7 @@ export default {
       if (route === '/shop/orders' && method === 'POST') {
         if (!cust) return json({ error: 'login required' }, 401);
         let body; try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
-        const res = await createOrder(env, cust.id, body);
+        const res = await createOrder(env, cust.id, body, cust.tier);
         if (res.error) return json({ error: res.error }, res.status || 400);
         const order = res.order;
         const mail = await notifyOrder(env, order, cust.email, true);
@@ -1613,16 +1680,97 @@ export default {
         return json({ ok: true, order: orderRow(fresh) });
       }
 
-      // 客户列表（注册时长、订单数、累计金额）
+      // 客户列表（注册时长、订单数、累计金额、当前档位、是否停用）
       if (route === '/shop-admin/customers' && method === 'GET') {
         const r = await env.DB.prepare(
           'SELECT c.id, c.email, c.name, c.company, c.country, c.phone, c.created_at, ' +
+          "COALESCE(c.tier,'retail') AS tier, COALESCE(c.active,1) AS active, " +
+          "COALESCE(c.admin_note,'') AS admin_note, " +
           'COUNT(o.id) AS order_count, COALESCE(SUM(CASE WHEN o.status IN ' +
           "('paid','processing','shipped','delivered') THEN o.total_cents ELSE 0 END),0) AS paid_cents " +
           'FROM customers c LEFT JOIN orders o ON o.customer_id = c.id ' +
           'GROUP BY c.id ORDER BY c.id DESC LIMIT 500'
         ).all();
         return json({ customers: (r.results || []).map(c => Object.assign({}, c, { paid: money(c.paid_cents) })) });
+      }
+
+      // 后台开号（批发老客户用）：管理员直接建账户并指定档位，不走公开注册。
+      // 密码只收不明文回显；tier 只认白名单值。
+      if (route === '/shop-admin/customers/create' && method === 'POST') {
+        let body;
+        try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+        const email = cleanEmail(body && body.email);
+        const pass = String((body && body.password) || '');
+        const name = String((body && body.name) || '').trim().slice(0, 120);
+        const tier = TIERS.indexOf(String((body && body.tier) || '')) >= 0
+          ? String(body.tier) : 'retail';
+        if (!email) return json({ error: 'valid email required' }, 400);
+        if (pass.length < 8 || pass.length > 200) return json({ error: 'password 8-200 chars' }, 400);
+        if (!name) return json({ error: 'name required' }, 400);
+        const exist = await env.DB.prepare('SELECT id FROM customers WHERE email=?').bind(email).first();
+        if (exist) return json({ error: 'email already registered' }, 409);
+        try {
+          const salt = saltHex();
+          const hash = await hashPassword(pass, salt);
+          const company = String((body && body.company) || '').trim().slice(0, 160);
+          const country = String((body && body.country) || '').trim().slice(0, 60);
+          const phone = String((body && body.phone) || '').trim().slice(0, 60);
+          const note = String((body && body.note) || '').trim().slice(0, 500);
+          const ins = await env.DB.prepare(
+            'INSERT INTO customers (email, pass_hash, pass_salt, name, company, country, phone, tier, admin_note) ' +
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+          ).bind(email, hash, salt, name, company, country, phone, tier, note).run();
+          // 绝不回显密码/哈希
+          return json({ ok: true, customer: { id: ins.meta && ins.meta.last_row_id,
+                        email, name, company, country, phone, tier } }, 201);
+        } catch (e) {
+          return json({ error: 'create failed', detail: String(e && e.message || e).slice(0, 160) }, 500);
+        }
+      }
+
+      // 后台改客户：档位 / 启停 / 备注 / 重置密码。都不回显密码。
+      if (route === '/shop-admin/customers/update' && method === 'POST') {
+        let body;
+        try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+        const id = Number(body && body.id);
+        if (!Number.isInteger(id) || id <= 0) return json({ error: 'invalid id' }, 400);
+        const cur = await env.DB.prepare('SELECT id FROM customers WHERE id=?').bind(id).first();
+        if (!cur) return json({ error: 'not found' }, 404);
+        const sets = [], vals = [];
+        if (body.tier !== undefined) {
+          const t = String(body.tier);
+          if (TIERS.indexOf(t) < 0) return json({ error: 'invalid tier' }, 400);
+          sets.push('tier=?'); vals.push(t);
+        }
+        if (body.active !== undefined) {
+          sets.push('active=?'); vals.push(Number(body.active) ? 1 : 0);
+        }
+        if (body.admin_note !== undefined) {
+          sets.push('admin_note=?'); vals.push(String(body.admin_note || '').trim().slice(0, 500));
+        }
+        if (body.password !== undefined && String(body.password) !== '') {
+          const p = String(body.password);
+          if (p.length < 8 || p.length > 200) return json({ error: 'password 8-200 chars' }, 400);
+          const salt = saltHex();
+          sets.push('pass_hash=?', 'pass_salt=?');
+          vals.push(await hashPassword(p, salt), salt);
+        }
+        if (!sets.length) return json({ error: 'nothing to update' }, 400);
+        try {
+          await env.DB.prepare('UPDATE customers SET ' + sets.join(', ') + ' WHERE id=?')
+            .bind(...vals, id).run();
+          // 停用必须立刻踢掉在线会话，否则对方手里的 Cookie 还能继续下单
+          if (body.active !== undefined && !Number(body.active)) {
+            try { await env.DB.prepare('DELETE FROM cust_sessions WHERE customer_id=?').bind(id).run(); }
+            catch (e) { /* 会话表异常不影响停用本身 */ }
+          }
+          const fresh = await env.DB.prepare(
+            "SELECT id, email, name, tier, COALESCE(active,1) AS active, COALESCE(admin_note,'') AS admin_note " +
+            'FROM customers WHERE id=?').bind(id).first();
+          return json({ ok: true, customer: fresh });
+        } catch (e) {
+          return json({ error: 'update failed', detail: String(e && e.message || e).slice(0, 160) }, 500);
+        }
       }
 
       return json({ error: 'not found' }, 404);
@@ -2050,6 +2198,63 @@ export default {
         return json({ ok: true });
       } catch (e) {
         return json({ error: 'save failed', detail: String(e && e.message || e).slice(0, 120) }, 500);
+      }
+    }
+
+    // 按 id 批量改价（零售价 / 批发价）。**只动价格，绝不碰 name/category/image/ukey**：
+    // 走 /products/batch 会把 ukey 重算、还可能把整行字段用 0 覆盖掉，改价绝不能借道那条路。
+    // items: [{ id, price?, price_wholesale? }]，两个字段至少给一个，缺省=不改。
+    if (route === '/products/prices' && method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+      const items = Array.isArray(body && body.items) ? body.items : null;
+      if (!items) return json({ error: 'items array required' }, 400);
+      if (!items.length) return json({ error: 'items empty' }, 400);
+      if (items.length > 500) return json({ error: 'too many items (max 500)' }, 413);
+      // 价格归一化口径与 cleanProduct 完全一致：非法/负数=0，两位小数，封顶防手滑
+      const norm = (v) => {
+        const n = Number(v);
+        return (isFinite(n) && n > 0) ? Math.min(Math.round(n * 100) / 100, 1000000) : 0;
+      };
+      const clean = [];
+      const errors = [];
+      items.forEach((raw, i) => {
+        const id = Number(raw && raw.id);
+        if (!Number.isInteger(id) || id <= 0) { errors.push({ index: i, error: 'invalid id' }); return; }
+        const hasP = raw.price !== undefined;
+        const hasW = raw.price_wholesale !== undefined;
+        if (!hasP && !hasW) { errors.push({ index: i, error: 'no price field' }); return; }
+        clean.push({ id, hasP, hasW, price: norm(raw.price), whole: norm(raw.price_wholesale) });
+      });
+      if (!clean.length) return json({ error: 'no valid items', errors }, 400);
+      try {
+        await ensureProducts(env);
+        const ids = clean.map(c => c.id);
+        const found = await env.DB.prepare(
+          'SELECT id FROM products WHERE id IN (' + ids.map(() => '?').join(',') + ')'
+        ).bind(...ids).all();
+        const alive = new Set((found.results || []).map(p => p.id));
+        const stmts = [];
+        for (const c of clean) {
+          if (!alive.has(c.id)) { errors.push({ id: c.id, error: 'not found' }); continue; }
+          if (c.hasP && c.hasW) {
+            stmts.push(env.DB.prepare(
+              "UPDATE products SET price=?, price_wholesale=?, updated_at=datetime('now') WHERE id=?"
+            ).bind(c.price, c.whole, c.id));
+          } else if (c.hasP) {
+            stmts.push(env.DB.prepare(
+              "UPDATE products SET price=?, updated_at=datetime('now') WHERE id=?"
+            ).bind(c.price, c.id));
+          } else {
+            stmts.push(env.DB.prepare(
+              "UPDATE products SET price_wholesale=?, updated_at=datetime('now') WHERE id=?"
+            ).bind(c.whole, c.id));
+          }
+        }
+        if (stmts.length) await env.DB.batch(stmts);
+        return json({ ok: true, total: items.length, updated: stmts.length, errors });
+      } catch (e) {
+        return json({ error: 'price update failed', detail: String(e && e.message || e).slice(0, 160) }, 500);
       }
     }
 
