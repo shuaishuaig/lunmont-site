@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<!-- build-tag: 2026-11-13 features-complete -->
+<!-- build-tag: 2026-11-13 editor-flex-v2 -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LUNMONT — 发夹与饰品批发 | 义乌市玥岑进出口有限公司</title>
 <meta name="description" content="LUNMONT（义乌市玥岑进出口有限公司）— 发夹与饰品批发，支持小批量起订与出口订单。Yiwu Cenova Import and Export Co., Ltd.">
@@ -102,6 +102,7 @@
   .seo-edit h3{font-size:15px;letter-spacing:.15em;margin-bottom:12px}
   .editbar button.active{background:#fffdf9;color:#0f0e0c;border-color:#fffdf9}
   .editbar button:disabled{opacity:.4}
+  .editbar button[hidden]{display:none}
   .pick-on [data-content-key]{cursor:pointer;outline:1px dashed rgba(55,138,221,.6);outline-offset:3px}
   .pick-on [data-content-key]:hover{outline:2px solid #378add;background:rgba(55,138,221,.10)}
   .pick-on [data-content-key].marked{outline:2px solid #d85a30;background:rgba(216,90,48,.14)}
@@ -183,9 +184,36 @@
   .mp-group{margin-top:10px;padding:4px 8px;background:#f6f1e8;border-left:3px solid var(--accent);
     font-size:11px;letter-spacing:.12em;color:#6b5a3e}
   .mp-item .mp-cur{max-width:170px}
-  /* ---- 文字样式面板：字号 / 字重 / 颜色 / 对齐 / 行高 / 字距 / 字体 ---- */
-  #stylePanel{width:344px}
+  /* ---- 原框内选区编辑：拖选一段字，只改这一段 ---- */
+  .editbar .sel-info{color:#ffcf7a;font-size:12px;letter-spacing:.04em;
+    border:1px dashed #d9a441;padding:3px 9px;max-width:230px;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .editbar .sel-info[hidden]{display:none}
+  .mp-sel{margin:2px 0 6px;padding:4px 7px;background:#fff4d8;border-left:3px solid #d9a441;
+    font-size:11px;color:#6b5a3e;white-space:normal;word-break:break-all}
+  .mp-sel b{color:#8a5a10}
+  /* AI 候选文字可直接微调：给可编辑态明显视觉，避免被当成静态文本 */
+  .cand-diff .aft{color:#0f6e56;border-bottom:1px dashed #1d9e75;cursor:text;outline:none}
+  .cand-diff .aft:focus{background:#eef8f3;box-shadow:0 0 0 2px rgba(29,158,117,.22)}
+  .cand-diff .aft[contenteditable]:hover{background:#f2faf6}
+  /* ---- 文字样式面板：基础 + 字体库 + 艺术字 ---- */
+  #stylePanel{width:392px;max-height:78vh}
   #stylePanel[hidden]{display:none}
+  .sp-sec{margin:12px 0 7px;padding:5px 8px;background:#f6f1e8;border-left:3px solid var(--accent);
+    font-size:11px;letter-spacing:.12em;color:#6b5a3e;display:flex;justify-content:space-between;align-items:center}
+  .sp-sec span{letter-spacing:0;color:#8a7a60;font-size:10px}
+  .sp-arts{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+  .sp-art{padding:7px 5px;border:1px solid var(--line);background:#fff;cursor:pointer;
+    font-size:16px;letter-spacing:.05em;text-align:center;min-height:40px;line-height:1.35}
+  .sp-art small{display:block;font-size:10px;color:#8a7a60;letter-spacing:0;margin-top:2px}
+  .sp-art.on{border-color:#d9a441;box-shadow:0 0 0 2px rgba(217,164,65,.25)}
+  .sp-preview{margin-top:9px;padding:13px 8px;border:1px dashed var(--line);background:#f6f1e8;
+    text-align:center;font-size:22px;letter-spacing:.08em;overflow:hidden;line-height:1.5}
+  .sp-pick{margin:2px 0 8px}
+  .sp-pick button{width:100%;padding:7px;border:1px dashed #d9a441;background:#fff8e8;
+    color:#6b5a3e;cursor:pointer;font-size:12px}
+  .sp-pick button.on{background:#d9a441;color:#0f0e0c;border-style:solid}
+  .sp-family-note{font-size:10px;color:#8a7a60;margin:-2px 0 8px;line-height:1.5}
   .sp-target{font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6}
   .sp-target b{color:var(--ink);font-weight:500}
   .sp-row{display:flex;align-items:center;gap:8px;margin-bottom:9px}
@@ -250,9 +278,11 @@
 </head>
 <body>
 <div class="editbar sans" id="editBar" hidden>
-  <span id="editTip">可视化编辑中：直接点页面文字修改</span>
+  <span id="editTip">可视化编辑中：直接点页面文字修改，也可拖选一段只改这段</span>
   <button type="button" id="modeText" class="active">直接改字</button>
   <button type="button" id="modePick" class="ghost">圈选 + AI</button>
+  <span class="sel-info" id="selInfo" hidden></span>
+  <button type="button" id="selEdit" class="ghost" hidden>✎ 改写选中</button>
   <button type="button" id="saveContent">保存文案</button>
   <button type="button" class="ghost" id="resetContent">放弃修改</button>
   <button type="button" class="ghost" id="verToggle">版本历史</button>
@@ -265,12 +295,13 @@
 </div>
 <div class="markpanel sans" id="markPanel" hidden>
   <div class="mp-head"><b>已标记 <span id="markCount">0</span> 处</b><button type="button" id="clearMarks">清空标记</button></div>
-  <p class="mp-tip">每处可「直接改成」手改，或写提示词让 AI 改；两者可混用。</p>
+  <p class="mp-tip">每处可「直接改成」手改，或写提示词让 AI 改；两者可混用。带「选中片段」的标记只改那一段，其余文字原样保留。</p>
   <div id="markList"></div>
   <div class="mp-global"><label>统一提示词（作用于所有未手改的标记处）</label><input id="globalHint" placeholder="例：更简洁、偏外贸 B2B 口吻，突出小批量起订"></div>
   <div class="mp-actions">
     <button type="button" id="aiRun">生成修改预览</button>
     <button type="button" id="aiApply" class="ghost" disabled>应用到网站</button>
+    <button type="button" id="aiTune" class="ghost" disabled>✎ 放进页面微调</button>
     <button type="button" id="aiDiscard" class="ghost" disabled>放弃预览</button>
   </div>
   <div class="cand-wrap" id="candWrap" hidden>
@@ -302,8 +333,11 @@
   <div class="ai-status" id="inqPanelStatus"></div>
 </div>
 <div class="markpanel sans" id="stylePanel" hidden>
-  <div class="mp-head"><b>文字样式</b><span><button type="button" id="spClose">关闭</button></span></div>
+  <div class="mp-head"><b>文字样式 · 艺术字</b><span><button type="button" id="spClose">关闭</button></span></div>
   <div class="sp-target" id="spTarget">点页面上任意文字，选中后调样式</div>
+  <div class="sp-pick"><button type="button" id="spPick">🎯 点选页面上的文字（或按住 Alt 点）</button></div>
+  <div class="sp-preview" id="spPreview">LUNMONT 艺术字</div>
+  <div class="sp-sec">基础排版<span>改动即时预览，保存后访客生效</span></div>
   <div class="sp-row"><label>字号</label><input type="range" id="spSize" min="8" max="120" step="1"><span class="val" id="spSizeVal">—</span></div>
   <div class="sp-row"><label>字重</label>
     <select id="spWeight">
@@ -318,15 +352,26 @@
   </div>
   <div class="sp-row"><label>行高</label><input type="range" id="spLine" min="0.8" max="2.5" step="0.05"><span class="val" id="spLineVal">—</span></div>
   <div class="sp-row"><label>字距</label><input type="range" id="spSpace" min="-0.05" max="0.5" step="0.01"><span class="val" id="spSpaceVal">—</span></div>
-  <div class="sp-row"><label>字体</label>
-    <select id="spFamily"><option value="">默认</option><option value="serif">宋体 / 衬线</option><option value="sans">黑体 / 无衬线</option></select>
+  <div class="sp-sec">字体库<span>系统字体栈 · 不加载外部字体，秒开</span></div>
+  <div class="sp-row"><label>字体</label><select id="spFamily"></select></div>
+  <div class="sp-family-note">中文字体会按访客系统已装字体逐级回退；西文字体对所有访客一致。选完可在上方预览条直接看效果。</div>
+  <div class="sp-row"><label>字形</label>
+    <select id="spFontStyle"><option value="">默认</option><option value="normal">正常</option><option value="italic">斜体 Italic</option></select>
   </div>
+  <div class="sp-row"><label>字母</label>
+    <select id="spTransform"><option value="">默认</option><option value="none">不转换</option><option value="uppercase">全大写</option><option value="lowercase">全小写</option><option value="capitalize">首字母大写</option></select>
+  </div>
+  <div class="sp-row"><label>装饰线</label>
+    <select id="spDecoration"><option value="">默认</option><option value="none">无</option><option value="underline">下划线</option><option value="overline">上划线</option><option value="line-through">删除线</option></select>
+  </div>
+  <div class="sp-sec">艺术字效果<span>选一个预设 · 可叠加上面的颜色</span></div>
+  <div class="sp-arts" id="spArts"></div>
   <div class="sp-actions">
     <button type="button" id="spSave">保存样式</button>
     <button type="button" id="spReset" class="ghost">重置此字段</button>
     <button type="button" id="spDiscard" class="ghost">放弃改动</button>
   </div>
-  <div class="sp-hint">样式保存后立即对访客生效，独立于文案的草稿 / 版本回滚。</div>
+  <div class="sp-hint">样式保存后立即对访客生效，独立于文案的草稿 / 版本回滚。特效为固定预设，不接受任意 CSS。</div>
   <div class="ai-status" id="spStatus"></div>
 </div>
 <nav data-block="nav" data-block-label="顶部导航">
@@ -592,6 +637,8 @@ const FIELD_LABELS = {
   contact_email:'联系邮箱', footer_left:'页脚左', footer_right:'页脚右'
 };
 let pickMode = false, markedKeys = [], aiEdits = null;
+// 原框内文本选区（相对字段 textContent 的偏移）：只改选中的那一段，其余文字原样保留
+let textSel = null, markSelection = {}, stylePickMode = false;
 // AI 多候选：生成后不自动写入 DOM，必须点「采用」才进预览
 let aiCandidates = null, activeCandidate = null, aiRejected = [];
 // 手改文字 / 单条提示词按 key 持久化：renderMarks 会重建列表，不能只依赖 DOM 输入框的值
@@ -600,6 +647,71 @@ let markDirect = {}, markHints = {};
 function nodeOf(k){ return document.querySelector('[data-content-key="'+k+'"]'); }
 function labelOf(k){ return FIELD_LABELS[k] || k; }
 function setAiStatus(t, cls){ const s=$('#aiStatus'); s.textContent=t; s.className='ai-status '+(cls||''); }
+
+/* ---- 原框内选区编辑：像普通编辑器一样拖选几个字，只改这一段 ----
+   选区按 textContent 偏移记录（不用 innerText，避免换行/空白导致偏移漂移）。
+   AI 只拿到「选中的片段」当作待改写文本，返回的也是新片段；写回 DOM 前用
+   composeText() 拼回完整文案，所以 snapshotContent() 保存的永远是整段文字。 */
+function readTextSel(){
+  if(!editMode || pickMode){ textSel=null; paintSelBar(); return; }
+  const s=window.getSelection();
+  if(!s || !s.rangeCount || s.isCollapsed){ textSel=null; paintSelBar(); return; }
+  const r=s.getRangeAt(0), n=r.commonAncestorContainer;
+  const host=(n && n.nodeType===1 ? n : (n && n.parentElement));
+  const el=host && host.closest ? host.closest('[data-content-key]') : null;
+  if(!el || !el.contains(r.startContainer) || !el.contains(r.endContainer)){
+    textSel=null; paintSelBar(); return;
+  }
+  let start;
+  try{
+    const pre=document.createRange(); pre.selectNodeContents(el);
+    pre.setEnd(r.startContainer, r.startOffset);
+    start=pre.toString().length;
+  }catch(e){ textSel=null; paintSelBar(); return; }
+  const end=start+r.toString().length;
+  if(end<=start){ textSel=null; paintSelBar(); return; }
+  textSel={ key:el.dataset.contentKey, start, end, text:r.toString() };
+  paintSelBar();
+}
+function paintSelBar(){
+  const info=$('#selInfo'), btn=$('#selEdit');
+  if(!info || !btn) return;
+  const on=!!textSel && editMode && !pickMode;
+  info.hidden=!on; btn.hidden=!on;
+  if(on) info.textContent='已选中 '+[...textSel.text].length+' 字：'+textSel.text.replace(/\s+/g,' ').slice(0,18);
+}
+function rangeOf(el, start, end){
+  const full=(el.textContent||'').length;
+  const s=Math.max(0,Math.min(full,start)), e=Math.max(s,Math.min(full,end));
+  const w=document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let n, acc=0, sn=null, so=0, en=null, eo=0;
+  while((n=w.nextNode())){
+    const len=n.nodeValue.length;
+    if(!sn && s<=acc+len){ sn=n; so=s-acc; }
+    if(e<=acc+len){ en=n; eo=e-acc; break; }
+    acc+=len;
+  }
+  if(!sn) return null;
+  if(!en){ en=sn; eo=sn.nodeValue.length; }
+  const r=document.createRange();
+  try{ r.setStart(sn,so); r.setEnd(en,eo); }catch(err){ return null; }
+  return r;
+}
+function replaceInField(key, start, end, text){
+  const el=nodeOf(key); if(!el) return false;
+  const r=rangeOf(el,start,end); if(!r) return false;
+  r.deleteContents(); r.insertNode(document.createTextNode(text));
+  el.normalize();
+  contentLoadSeq++;   // 本地改动优先，作废在途 /api/content
+  return true;
+}
+// 有选区时把「新片段」拼回整段；无选区时 e.after 本身就是整段文案
+function composeText(e){
+  const sel=markSelection[e.key];
+  if(!sel) return String(e.after==null?'':e.after);
+  const full=String(e.beforeFull!==undefined?e.beforeFull:(e.before||''));
+  return full.slice(0,sel.start)+String(e.after==null?'':e.after)+full.slice(sel.end);
+}
 
 /* data-block 模块层级：字段归属靠 closest 推断，不给每个字段重复写属性。
    标签内容写进 data-block-label，由 CSS ::after 渲染，绝不进 DOM 文本，
@@ -643,12 +755,23 @@ function renderMarks(){
       const del=document.createElement('button'); del.type='button'; del.className='mp-del';
       del.dataset.key=k; del.textContent='移除';
       name.appendChild(idx); name.appendChild(lab); name.appendChild(curEl); name.appendChild(del);
+      const sel=markSelection[k];
+      let selBox=null;
+      if(sel){
+        selBox=document.createElement('div'); selBox.className='mp-sel';
+        const lab=document.createElement('b'); lab.textContent='选中片段：';
+        selBox.appendChild(lab);
+        selBox.appendChild(document.createTextNode(sel.text.replace(/\s+/g,' ').slice(0,60)));
+      }
       const direct=document.createElement('input'); direct.className='mp-direct'; direct.dataset.key=k;
-      direct.placeholder='直接改成（手改，不走 AI）'; direct.value=markDirect[k]||'';
+      direct.placeholder=sel?'替换选中片段（手改，不走 AI）':'直接改成（手改，不走 AI）';
+      direct.value=markDirect[k]||'';
       const hint=document.createElement('input'); hint.className='mp-hint'; hint.dataset.key=k;
       hint.placeholder='或写提示词让 AI 改（留空用统一提示词）'; hint.value=markHints[k]||'';
       const prev=document.createElement('div'); prev.className='mp-preview'; prev.dataset.key=k;
-      div.appendChild(name); div.appendChild(direct); div.appendChild(hint); div.appendChild(prev);
+      div.appendChild(name);
+      if(selBox) div.appendChild(selBox);
+      div.appendChild(direct); div.appendChild(hint); div.appendChild(prev);
       box.appendChild(div);
     });
   });
@@ -663,7 +786,7 @@ function renderMarks(){
   if(aiEdits){
     aiEdits.forEach(e=>{
       const p=box.querySelector('.mp-preview[data-key="'+e.key+'"]');
-      if(p) p.textContent='建议：'+e.after;
+      if(p) p.textContent='建议：'+composeText(e);
     });
   }
 }
@@ -674,7 +797,7 @@ function renderCandidates(){
   const list=aiCandidates||[];
   wrap.hidden=!list.length;
   if(!list.length) return;
-  $('#candTitle').textContent='AI 方案 '+list.length+' 个 · 点「采用」预览，确认后再点「应用到网站」';
+  $('#candTitle').textContent='AI 方案 '+list.length+' 个 · 绿色文字可直接改；点「采用」预览，再应用或放进页面微调';
   list.forEach((c,i)=>{
     const card=document.createElement('div');
     card.className='cand-card'+(activeCandidate===c.id?' adopted':'');
@@ -685,12 +808,15 @@ function renderCandidates(){
     head.appendChild(b); head.appendChild(risk);
     const why=document.createElement('p'); why.className='cand-why'; why.textContent=c.why||'';
     const diff=document.createElement('div'); diff.className='cand-diff';
-    (c.edits||[]).forEach(e=>{
+    (c.edits||[]).forEach((e,ei)=>{
       const row=document.createElement('div');
       const k=document.createElement('span'); k.className='k'; k.textContent=labelOf(e.key)+'：';
       const bef=document.createElement('span'); bef.textContent=String(e.before||'').replace(/\s+/g,' ');
       const arr=document.createElement('span'); arr.textContent=' → ';
       const aft=document.createElement('span'); aft.className='aft';
+      aft.setAttribute('contenteditable','true'); aft.setAttribute('spellcheck','false');
+      aft.dataset.cid=c.id; aft.dataset.ei=String(ei);
+      aft.title='可直接改这个方案的文字';
       aft.textContent=String(e.after||'').replace(/\s+/g,' ');
       row.appendChild(k); row.appendChild(bef); row.appendChild(arr); row.appendChild(aft);
       diff.appendChild(row);
@@ -709,6 +835,17 @@ function renderCandidates(){
   });
   // 铁律：innerHTML 重建的列表，事件绑定必须写在重建函数末尾
   box.querySelectorAll('.cand-adopt').forEach(btn=>btn.onclick=()=>adoptCandidate(btn.dataset.cid));
+  // 候选文字可直接微调：改完若该方案已被采用，同步刷新页面预览，不重绘列表（否则光标丢失）
+  box.querySelectorAll('.cand-diff .aft').forEach(el=>el.oninput=()=>{
+    const c=(aiCandidates||[]).find(x=>x.id===el.dataset.cid);
+    if(!c || !c.edits) return;
+    const e=c.edits[Number(el.dataset.ei)]; if(!e) return;
+    e.after=String(el.textContent||'').replace(/\n/g,' ');
+    if(activeCandidate===c.id){
+      (aiEdits||[]).forEach(x=>{ const n=nodeOf(x.key); if(n) n.textContent=composeText(x); });
+    }
+    setAiStatus('方案文字已微调；采用后可在页面里继续改，或点「✎ 放进页面微调」','ok');
+  });
 }
 
 function adoptCandidate(id){
@@ -719,15 +856,15 @@ function adoptCandidate(id){
   activeCandidate=id;
   applyPreview(true);
   renderMarks(); renderCandidates();
-  $('#aiApply').disabled=false; $('#aiDiscard').disabled=false;
-  setAiStatus('已采用方案，绿虚线为预览；确认后点「应用到网站」','ok');
+  $('#aiApply').disabled=false; $('#aiTune').disabled=false; $('#aiDiscard').disabled=false;
+  setAiStatus('已采用方案，绿虚线为预览；可直接改方案文字、点「应用到网站」，或「✎ 放进页面微调」在原框继续改','ok');
 }
 
 function toggleMark(k){
   const i=markedKeys.indexOf(k);
   const el=nodeOf(k);
   if(i>=0){
-    markedKeys.splice(i,1); delete markDirect[k]; delete markHints[k];
+    markedKeys.splice(i,1); delete markDirect[k]; delete markHints[k]; delete markSelection[k];
     if(el) el.classList.remove('marked');
   } else {
     markedKeys.push(k);
@@ -746,6 +883,7 @@ function invalidatePreview(){
   renderCandidates();
   document.querySelectorAll('.mp-preview').forEach(p=>p.textContent='');
   $('#aiApply').disabled=true;
+  $('#aiTune').disabled=true;
   $('#aiDiscard').disabled=true;
 }
 
@@ -758,7 +896,7 @@ function applyPreview(on){
     const el=nodeOf(e.key); if(!el) return;
     if(on){
       if(el.dataset.aiBefore===undefined) el.dataset.aiBefore=el.textContent;
-      el.textContent=e.after; el.classList.add('ai-preview');
+      el.textContent=composeText(e); el.classList.add('ai-preview');
     } else {
       if(el.dataset.aiBefore!==undefined){ el.textContent=el.dataset.aiBefore; delete el.dataset.aiBefore; }
       el.classList.remove('ai-preview');
@@ -775,27 +913,35 @@ function setPickMode(on){
   $('#modePick').classList.toggle('active', on);
   $('#modeText').classList.toggle('ghost', on);
   $('#modePick').classList.toggle('ghost', !on);
-  $('#editTip').textContent = on ? '圈选模式：点页面文字加入标记，再写提示词' : '可视化编辑中：直接点页面文字修改';
+  $('#editTip').textContent = on ? '圈选模式：点页面文字加入标记，再写提示词' :
+    '可视化编辑中：直接点页面文字修改，也可拖选一段只改这段';
   $('#saveContent').disabled = on;
   $('#resetContent').disabled = on;
   if(on){ renderMarks(); }
   else {
     invalidatePreview(); clearMarkHighlights();
-    markedKeys=[]; markDirect={}; markHints={};
+    markedKeys=[]; markDirect={}; markHints={}; markSelection={}; textSel=null;
     $('#globalHint').value=''; renderMarks(); setAiStatus('');
   }
+  paintSelBar();
 }
 
 async function aiRun(){
   if(!markedKeys.length){ setAiStatus('先点页面文字加入标记','err'); return; }
   contentLoadSeq++;   // 作废在途读取：否则它会在预览之后落地，把预览文字和 baseline 冲掉
-  const directEdits=[], aiMarks=[];
+  const directEdits=[], aiMarks=[], fullText={};
   markedKeys.forEach(k=>{
     const el=nodeOf(k);
-    const before=((el && (el.innerText||el.textContent)) || '').replace(/\r/g,'').trim();
+    // beforeFull 必须是原始 textContent：选区偏移按它计算，拼接回写也按它，
+    // 用 innerText 会因 <br>/换行归一化导致偏移漂移。
+    const full=el ? (el.textContent||'').replace(/\r/g,'') : '';
+    const shown=((el && (el.innerText||el.textContent)) || '').replace(/\r/g,' ').replace(/\s+/g,' ').trim();
+    fullText[k]=full;
+    const sel=markSelection[k];
     const direct=(markDirect[k]||'').trim();
-    if(direct) directEdits.push({key:k,before,after:direct});
-    else aiMarks.push({key:k,label:labelOf(k),text:before,hint:(markHints[k]||'').trim()});
+    if(direct) directEdits.push({key:k,before:sel?sel.text:shown,beforeFull:full,after:direct});
+    else aiMarks.push({key:k,label:labelOf(k)+(sel?' › 选中片段':''),
+                       text:sel?sel.text:shown,hint:(markHints[k]||'').trim()});
   });
   const hint=$('#globalHint').value.trim();
   const needAI = aiMarks.length && (hint || aiMarks.some(m=>m.hint));
@@ -818,7 +964,9 @@ async function aiRun(){
       // 手改字段并入每个 AI 方案，采用任一方案都不会丢掉手改
       candidates=(d.candidates||[]).map(c=>({
         id:c.id, why:c.why||'', risk:c.risk||'低', truncated:!!c.truncated,
-        edits:directEdits.concat(c.edits||[])
+        edits:directEdits.concat((c.edits||[]).map(e=>Object.assign({},e,{
+          beforeFull:fullText[e.key]||String(e.before||'')
+        })))
       }));
     }
     if(!candidates.length && directEdits.length){
@@ -856,9 +1004,9 @@ async function aiApply(){
     if(!r.ok) throw new Error(d.error||d.detail||r.status);
     contentCache=content; contentBaseline=content;
     contentNodes().forEach(el=>{ el.classList.remove('ai-preview'); delete el.dataset.aiBefore; });
-    aiEdits=null; markDirect={};
+    aiEdits=null; markDirect={}; markSelection={};
     aiCandidates=null; activeCandidate=null; aiRejected=[];
-    $('#aiDiscard').disabled=true;
+    $('#aiDiscard').disabled=true; $('#aiTune').disabled=true;
     renderCandidates(); renderMarks();
     setAiStatus(d.version ? '已应用到网站（v'+d.version+'），可在「版本历史」回滚' :
                             '内容未变化，未生成新版本','ok');
@@ -879,9 +1027,44 @@ $('#aiDiscard').onclick=()=>{
   // 只撤销「采用」，保留候选列表，方便换一个方案重选
   applyPreview(false); aiEdits=null; activeCandidate=null;
   renderMarks(); renderCandidates();
-  $('#aiApply').disabled=true; $('#aiDiscard').disabled=true;
+  $('#aiApply').disabled=true; $('#aiTune').disabled=true; $('#aiDiscard').disabled=true;
   setAiStatus('已放弃预览，可点其它方案的「采用」重选');
 };
+/* 拖选文字 → 只改这一段：复用圈选 / AI 流程，把「选中片段」当作待改写文本。
+   AI 返回的也是新片段，composeText() 负责拼回整段，其余文字一个字都不动。 */
+$('#selEdit').onclick=()=>{
+  if(!textSel) return;
+  const sel=Object.assign({},textSel);
+  if(!pickMode) setPickMode(true);
+  if(markedKeys.indexOf(sel.key)<0) toggleMark(sel.key);
+  markSelection[sel.key]=sel;
+  if(!markHints[sel.key]) markHints[sel.key]='润色这段文字，保持语言与整体语气一致，只返回改写后的文字本身';
+  renderMarks();
+  setAiStatus('已锁定选中片段：只改这一段，其余文字原样保留。可填「替换选中片段」，或生成 AI 方案','ok');
+  $('#globalHint').focus();
+};
+/* 「✎ 放进页面微调」：AI 预览落地成普通可编辑文案，之后可以逐字改、拖选改。
+   必须先清掉 aiBefore 还原锚点，否则后续「放弃预览」会把用户手改冲掉。 */
+$('#aiTune').onclick=()=>{
+  if(!aiEdits) return;
+  const keys=aiEdits.map(e=>e.key);
+  contentNodes().forEach(el=>{ el.classList.remove('ai-preview'); delete el.dataset.aiBefore; });
+  aiEdits=null; activeCandidate=null; aiCandidates=null; aiRejected=[];
+  markDirect={}; markSelection={}; textSel=null;
+  setPickMode(false);            // 回到「直接改字」，重新打开 contenteditable
+  $('#aiTune').disabled=true;
+  const first=nodeOf(keys[0]);
+  if(first){
+    first.focus();
+    try{
+      const r=document.createRange(); r.selectNodeContents(first); r.collapse(false);
+      const s=window.getSelection(); s.removeAllRanges(); s.addRange(r);
+    }catch(e){}
+  }
+  setContentStatus('AI 文案已放进原框，可继续微调，改完点「保存文案」','ok');
+  setAiStatus('已切换到直接改字：现在可以在原框里选中任意文字继续改','ok');
+};
+document.addEventListener('selectionchange', ()=>{ if(editMode) readTextSel(); });
 /* ---- 版本历史：保存即发版，误改可回滚 ---- */
 let VER_LIST = [], verPreviewing = null;
 function setVerStatus(t, cls){ const s=$('#verStatus'); s.textContent=t; s.className='ai-status '+(cls||''); }
@@ -1105,14 +1288,60 @@ $('#verToggle').onclick=()=>{
 $('#verClose').onclick=()=>{ $('#verPanel').hidden=true; if(verPreviewing!==null) backToCurrent(); };
 $('#verBack').onclick=backToCurrent;
 
-/* ---- 文字样式：字号 / 字重 / 颜色 / 对齐 / 行高 / 字距 / 字体 ----
-   实现口径：不改 DOM 结构、不写 inline style，只生成一条 <style> 规则。
+/* ---- 文字样式：基础排版 + 字体库 + 艺术字 ----
+   实现口径：不改 DOM 结构、不给内容节点写 inline style，只生成一条 <style> 规则。
    这样 contenteditable 的 innerText 与 snapshotContent() 完全不受影响，
-   也不会把样式值误当文案存进 site_content。 */
+   也不会把样式值误当文案存进 site_content。
+   ⚠️ 服务端 STYLE_PROPS.fontFamily / art 白名单必须与这里的 key 完全一致（同步改）。 */
 const FONT_STACKS = {
-  serif: '"Noto Serif SC","Songti SC",Georgia,serif',
-  sans: '"PingFang SC","Microsoft YaHei",sans-serif'
+  // 中文 · 印刷体
+  serif:    '"Noto Serif SC","Source Han Serif SC","Songti SC","SimSun",Georgia,serif',
+  songti:   '"Songti SC","STSong","SimSun","Noto Serif CJK SC",serif',
+  fangsong: '"FangSong","STFangsong","仿宋","Songti SC",serif',
+  kaiti:    '"Kaiti SC","STKaiti","KaiTi","楷体",serif',
+  // 中文 · 现代体
+  sans:     '"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif',
+  heiti:    '"Heiti SC","SimHei","黑体","Microsoft YaHei",sans-serif',
+  yuanti:   '"Yuanti SC","YouYuan","幼圆","PingFang SC",sans-serif',
+  light:    '"PingFang SC Light","Microsoft YaHei Light","Noto Sans CJK SC Light",sans-serif',
+  // 西文 · 经典
+  georgia:  'Georgia,"Times New Roman",serif',
+  times:    '"Times New Roman",Times,"Songti SC",serif',
+  helvetica:'Helvetica,Arial,"PingFang SC",sans-serif',
+  palatino: 'Palatino,"Palatino Linotype","Book Antiqua",Georgia,serif',
+  // 西文 · 展示 / 手写 / 等宽
+  impact:   'Impact,Haettenschweiler,"Arial Narrow Bold","Microsoft YaHei",sans-serif',
+  script:   '"Brush Script MT","Segoe Script","Snell Roundhand",cursive',
+  mono:     'Consolas,"Courier New","Microsoft YaHei",monospace',
+  trebuchet:'"Trebuchet MS",Verdana,"PingFang SC",sans-serif'
 };
+const FONT_GROUPS = [
+  {label:'中文 · 印刷体', items:[['serif','思源宋 / 宋体（推荐标题）'],['songti','华文宋 / 宋体'],
+    ['fangsong','仿宋'],['kaiti','楷体']]},
+  {label:'中文 · 现代体', items:[['sans','苹方 / 微软雅黑（默认）'],['heiti','黑体'],
+    ['yuanti','圆体'],['light','细黑 / 轻量']]},
+  {label:'西文 · 经典', items:[['georgia','Georgia 衬线'],['times','Times New Roman'],
+    ['helvetica','Helvetica / Arial'],['palatino','Palatino 书卷体']]},
+  {label:'西文 · 展示 / 手写', items:[['impact','Impact 粗展示'],['script','手写花体'],
+    ['mono','等宽 Mono'],['trebuchet','Trebuchet / Verdana']]}
+];
+// 艺术字：只存预设 key，CSS 声明全在下面这张常量表里，绝不拼接任意 CSS 字符串。
+// 每条声明注入时都带 !important，否则会被主题高特异性规则压回去。
+const ART_PRESETS = [
+  {key:'',        label:'无特效',   css:[]},
+  {key:'shadow',  label:'柔和投影', css:[['text-shadow','0 2px 14px rgba(0,0,0,.45)']]},
+  {key:'glow',    label:'霓虹发光', css:[['text-shadow','0 0 8px currentColor,0 0 22px currentColor,0 0 42px currentColor']]},
+  {key:'emboss',  label:'浮雕立体', css:[['text-shadow','1px 1px 0 rgba(255,255,255,.75),2px 2px 0 rgba(0,0,0,.28),-1px -1px 0 rgba(0,0,0,.18)']]},
+  {key:'retro',   label:'复古双层', css:[['text-shadow','3px 3px 0 #d9a441,6px 6px 0 rgba(15,14,12,.3)']]},
+  {key:'stroke',  label:'描边实心', css:[['-webkit-text-stroke','1.5px currentColor'],['paint-order','stroke fill']]},
+  {key:'hollow',  label:'镂空描边', css:[['-webkit-text-stroke','1.4px currentColor'],['-webkit-text-fill-color','transparent'],['color','transparent']]},
+  {key:'neon',    label:'霓虹描边', css:[['-webkit-text-stroke','1px #fffdf9'],['text-shadow','0 0 6px currentColor,0 0 18px currentColor,0 0 36px currentColor']]},
+  {key:'outline', label:'白字深边', css:[['-webkit-text-stroke','2px rgba(15,14,12,.85)'],['paint-order','stroke fill'],['-webkit-text-fill-color','#fffdf9']]},
+  {key:'gold',    label:'鎏金渐变', css:[['background-image','linear-gradient(105deg,#b8860b 0%,#f7e7a1 35%,#d9a441 60%,#8a5a10 100%)'],['-webkit-background-clip','text'],['background-clip','text'],['-webkit-text-fill-color','transparent'],['color','transparent']]},
+  {key:'rainbow', label:'幻彩渐变', css:[['background-image','linear-gradient(100deg,#d85a30,#d9a441,#1d9e75,#378add,#8e5bd8)'],['-webkit-background-clip','text'],['background-clip','text'],['-webkit-text-fill-color','transparent'],['color','transparent']]}
+];
+const ART_BY_KEY = {};
+ART_PRESETS.forEach(a=>{ if(a.key) ART_BY_KEY[a.key]=a.css; });
 const SP_SWATCHES = ['#0f0e0c','#5f5e5a','#9a7b4f','#b03a2e','#1d6f42','#1f4e79','#ffffff','#d9a441'];
 let styleLive = {}, styleDraft = {}, styleTarget = null, styleLoadSeq = 0;
 
@@ -1135,6 +1364,13 @@ function buildStyleCss(map){
     if(s.lineHeight) d.push('line-height:'+Number(s.lineHeight)+'!important');
     if(s.letterSpacing!==undefined && s.letterSpacing!=='') d.push('letter-spacing:'+Number(s.letterSpacing)+'em!important');
     if(s.fontFamily && FONT_STACKS[s.fontFamily]) d.push('font-family:'+FONT_STACKS[s.fontFamily]+'!important');
+    if(s.fontStyle && ['normal','italic'].indexOf(s.fontStyle)>=0) d.push('font-style:'+s.fontStyle+'!important');
+    if(s.textTransform && ['none','uppercase','lowercase','capitalize'].indexOf(s.textTransform)>=0)
+      d.push('text-transform:'+s.textTransform+'!important');
+    if(s.textDecoration && ['none','underline','overline','line-through'].indexOf(s.textDecoration)>=0)
+      d.push('text-decoration:'+s.textDecoration+'!important');
+    // 艺术字放最后：渐变/镂空要盖过用户设的 color，每条声明仍逐条 !important
+    if(s.art && ART_BY_KEY[s.art]) ART_BY_KEY[s.art].forEach(([p,v])=>d.push(p+':'+v+'!important'));
     if(d.length) out+='[data-content-key="'+k+'"]{'+d.join(';')+'}\n';
   });
   return out;
@@ -1187,6 +1423,7 @@ function setStyleProp(p, v){
   else { const nv=spNorm(p,v); if(nv===null) return; o[p]=nv; }
   if(Object.keys(o).length) styleDraft[styleTarget]=o; else delete styleDraft[styleTarget];
   applyStyles(styleDraft);
+  paintPreview();
   spStatus(JSON.stringify(styleDraft)===JSON.stringify(styleLive)?'样式未改动':'有未保存的样式改动','');
 }
 
@@ -1207,6 +1444,59 @@ function renderSwatches(){
   });
 }
 
+function buildFontSelect(){
+  const sel=$('#spFamily'); if(!sel) return;
+  sel.innerHTML='';
+  const d=document.createElement('option'); d.value=''; d.textContent='默认（跟随主题）'; sel.appendChild(d);
+  FONT_GROUPS.forEach(g=>{
+    const og=document.createElement('optgroup'); og.label=g.label;
+    g.items.forEach(([k,t])=>{ const o=document.createElement('option'); o.value=k; o.textContent=t; og.appendChild(o); });
+    sel.appendChild(og);
+  });
+}
+// 面板内预览条写 inline style 无妨：它不是内容节点，
+// snapshotContent() 只遍历 [data-content-key]，不会被样式值污染。
+function paintPreview(){
+  const p=$('#spPreview'); if(!p) return;
+  p.removeAttribute('style');
+  const s=spStyle();
+  if(s.fontSize) p.style.fontSize=s.fontSize+'px';
+  if(s.fontWeight) p.style.fontWeight=s.fontWeight;
+  if(s.color) p.style.color=s.color;
+  if(s.lineHeight) p.style.lineHeight=s.lineHeight;
+  if(s.letterSpacing!==undefined && s.letterSpacing!=='') p.style.letterSpacing=s.letterSpacing+'em';
+  if(s.fontFamily && FONT_STACKS[s.fontFamily]) p.style.fontFamily=FONT_STACKS[s.fontFamily];
+  if(s.fontStyle) p.style.fontStyle=s.fontStyle;
+  if(s.textTransform) p.style.textTransform=s.textTransform;
+  if(s.textDecoration) p.style.textDecoration=s.textDecoration;
+  const art=ART_BY_KEY[s.art];
+  if(art) art.forEach(([k,v])=>{ try{ p.style.setProperty(k,v); }catch(e){} });
+}
+function renderArts(){
+  const box=$('#spArts'); if(!box) return;
+  box.innerHTML='';
+  const cur=String(spStyle().art||'');
+  ART_PRESETS.forEach(a=>{
+    const b=document.createElement('button'); b.type='button';
+    b.className='sp-art'+(cur===a.key?' on':''); b.dataset.art=a.key;
+    const t=document.createElement('span'); t.textContent='Lunmont';
+    t.style.display='inline-block';
+    a.css.forEach(([k,v])=>{ try{ t.style.setProperty(k,v); }catch(e){} });
+    b.appendChild(t);
+    const sm=document.createElement('small'); sm.textContent=a.label; b.appendChild(sm);
+    box.appendChild(b);
+  });
+  // 铁律：innerHTML 重建的列表，事件绑定写在重建函数末尾
+  box.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    setStyleProp('art', b.dataset.art);
+    renderArts(); paintPreview();
+  });
+}
+function syncStylePick(){
+  const b=$('#spPick'); if(!b) return;
+  b.classList.toggle('on', stylePickMode);
+  b.textContent=stylePickMode?'👆 请点页面上的目标文字（Esc 取消）':'🎯 点选页面上的文字（或按住 Alt 点）';
+}
 function syncStylePanel(){
   const s=spStyle();
   const box=$('#spTarget'); box.innerHTML='';
@@ -1231,11 +1521,15 @@ function syncStylePanel(){
   $('#spSpace').value=Math.min(0.5,Math.max(-0.05,sp));
   $('#spSpaceVal').textContent=Number($('#spSpace').value).toFixed(2)+'em';
   $('#spFamily').value=s.fontFamily||'';
-  renderSwatches();
+  $('#spFontStyle').value=s.fontStyle||'';
+  $('#spTransform').value=s.textTransform||'';
+  $('#spDecoration').value=s.textDecoration||'';
+  renderSwatches(); renderArts(); paintPreview();
 }
 
 function openStylePanel(k){
   styleTarget=k;
+  stylePickMode=false; syncStylePick();
   $('#stylePanel').hidden=false;
   styleLoadSeq++;   // 选中即视为开始编辑，作废在途读取
   syncStylePanel();
@@ -1264,6 +1558,10 @@ $('#spSpace').oninput=()=>{ $('#spSpaceVal').textContent=Number($('#spSpace').va
 $('#spWeight').onchange=()=>setStyleProp('fontWeight',$('#spWeight').value);
 $('#spAlign').onchange=()=>setStyleProp('align',$('#spAlign').value);
 $('#spFamily').onchange=()=>setStyleProp('fontFamily',$('#spFamily').value);
+$('#spFontStyle').onchange=()=>setStyleProp('fontStyle',$('#spFontStyle').value);
+$('#spTransform').onchange=()=>setStyleProp('textTransform',$('#spTransform').value);
+$('#spDecoration').onchange=()=>setStyleProp('textDecoration',$('#spDecoration').value);
+$('#spPick').onclick=()=>{ stylePickMode=!stylePickMode; syncStylePick(); };
 $('#spColor').oninput=()=>{ setStyleProp('color',$('#spColor').value); renderSwatches(); };
 $('#spSave').onclick=saveStyles;
 $('#spReset').onclick=()=>{
@@ -1280,7 +1578,8 @@ $('#spDiscard').onclick=()=>{
   syncStylePanel();
   spStatus('已放弃未保存的样式改动','ok');
 };
-$('#spClose').onclick=()=>{ $('#stylePanel').hidden=true; };
+$('#spClose').onclick=()=>{ $('#stylePanel').hidden=true; stylePickMode=false; syncStylePick(); };
+buildFontSelect();
 $('#styleToggle').onclick=()=>{
   const on=$('#stylePanel').hidden;
   if(on){
@@ -1289,18 +1588,31 @@ $('#styleToggle').onclick=()=>{
     closeDraftPreview();
   }
   $('#stylePanel').hidden=!on;
-  if(on) loadStyles();
-  if(on && !styleTarget) spStatus('点页面上任意文字，选中后可调字号 / 颜色 / 对齐','');
+  if(on){
+    loadStyles();
+    // 首次打开没有目标时自动进入点选；已有目标则绝不拦截点击，用户照常在原框改字
+    stylePickMode=!styleTarget; syncStylePick();
+  } else { stylePickMode=false; syncStylePick(); }
+  if(on && !styleTarget) spStatus('点「🎯 点选」或按住 Alt 点页面文字；选好后仍可直接在原框里改字','');
 };
 
 document.addEventListener('click', e=>{
   const el=e.target.closest && e.target.closest('[data-content-key]');
   if(!editMode || !el) return;
-  e.preventDefault();
-  if(pickMode){ toggleMark(el.dataset.contentKey); return; }
-  // 样式面板开着时，点谁就调谁；关着不打扰正常改字
-  if(!$('#stylePanel').hidden) openStylePanel(el.dataset.contentKey);
+  // 只在「圈选标记」和「点选样式目标」两种场景拦截点击。
+  // 旧版这里无条件 preventDefault，contenteditable 拿不到焦点，
+  // 于是无法在原框里点光标 / 拖选文字 —— 这正是「不能选取修改」的根因。
+  if(pickMode){ e.preventDefault(); toggleMark(el.dataset.contentKey); return; }
+  const wantStyle=(stylePickMode || e.altKey) && !$('#stylePanel').hidden;
+  if(wantStyle){
+    e.preventDefault();
+    stylePickMode=false; syncStylePick();
+    openStylePanel(el.dataset.contentKey);
+  }
 }, true);
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape' && stylePickMode){ stylePickMode=false; syncStylePick(); }
+});
 // 用户一旦开始敲字，进入管理模式时的在途读取即作废，避免晚到的响应冲掉未保存内容
 document.addEventListener('input', e=>{
   if(editMode && !pickMode && e.target && e.target.hasAttribute &&
@@ -1563,6 +1875,8 @@ $('#editToggle').onclick=async()=>{
   $('#editBar').hidden = !editMode;
   if(!editMode && pickMode) setPickMode(false);
   setEditable(editMode && !pickMode);
+  if(!editMode){ textSel=null; stylePickMode=false; syncStylePick(); }
+  paintSelBar();
   if(editMode){
     primeSeo();
     paintBlockLabels();
