@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>管理登录 · LUNMONT</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+  background:#f7f4ee;color:#0f0e0c;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+.card{width:min(420px,92vw);background:#fffdf9;border:1px solid #e2d9c8;padding:34px 30px;
+  box-shadow:0 18px 60px rgba(15,14,12,.10)}
+.brand{font-size:13px;letter-spacing:.42em;color:#0f0e0c;margin-bottom:6px}
+h1{font-size:19px;font-weight:500;letter-spacing:.06em;margin:0 0 4px}
+.sub{font-size:12px;color:#8a7a60;letter-spacing:.04em;margin-bottom:22px}
+label{display:block;font-size:11px;letter-spacing:.18em;color:#6b5a3e;margin:0 0 6px}
+input{width:100%;padding:11px 12px;border:1px solid #d9cdb6;background:#fff;font-size:14px;
+  font-family:inherit;letter-spacing:.06em;border-radius:0}
+input:focus{outline:none;border-color:#d9a441}
+button{width:100%;margin-top:18px;padding:12px;border:1px solid #d9a441;background:#d9a441;
+  color:#0f0e0c;font-size:13px;letter-spacing:.26em;cursor:pointer;font-family:inherit}
+button:disabled{opacity:.55;cursor:wait}
+.st{min-height:20px;margin-top:13px;font-size:12px;letter-spacing:.04em;color:#8a7a60}
+.st.err{color:#c0392b}.st.ok{color:#1e7a44}
+.back{display:inline-block;margin-top:18px;font-size:12px;color:#8a7a60;text-decoration:none;
+  letter-spacing:.06em;border-bottom:1px solid #d9cdb6;padding-bottom:2px}
+</style></head>
+<body>
+<form class="card" id="loginForm" autocomplete="off">
+  <div class="brand">LUNMONT</div>
+  <h1>管理员登录</h1>
+  <div class="sub">仅管理员可见 · 访客请返回首页</div>
+  <label for="key">管理密钥 / Admin key</label>
+  <input id="key" type="password" placeholder="请输入管理密钥" autocomplete="current-password" required>
+  <button type="submit" id="go">登 录</button>
+  <div class="st" id="st"></div>
+  <a class="back" href="/">← 返回首页</a>
+</form>
+<script>
+(function(){
+  var form = document.getElementById('loginForm');
+  var input = document.getElementById('key');
+  var go = document.getElementById('go');
+  var st = document.getElementById('st');
+  function say(m, cls){ st.textContent = m || ''; st.className = 'st' + (cls ? ' ' + cls : ''); }
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    var k = (input.value || '').trim();
+    if(!k){ say('请输入管理密钥', 'err'); return; }
+    go.disabled = true; say('正在校验…');
+    fetch('/api/admin/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      credentials: 'same-origin',
+      body: JSON.stringify({key: k})
+    }).then(function(r){
+      return r.json().then(function(b){ return {status: r.status, body: b}; });
+    }).then(function(res){
+      if(res.status === 200 && res.body && res.body.ok){
+        // ⚠️ 密钥只放 sessionStorage：关标签页即失效，不落长期 cookie
+        sessionStorage.setItem('lunmont_admin_key', k);
+        say('登录成功，正在进入…', 'ok');
+        location.replace('/?admin=1');
+        return;
+      }
+      go.disabled = false;
+      say(res.status === 401 ? '管理密钥错误' : '登录失败，请稍后重试', 'err');
+      input.select();
+    }).catch(function(){
+      go.disabled = false;
+      say('网络异常，请重试', 'err');
+    });
+  });
+  input.focus();
+})();
+</script>
+</body></html>
