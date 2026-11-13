@@ -127,6 +127,13 @@ async function ensureInquiries(env) {
   inquiriesReady = true;
 }
 
+// ⚠️ 与前端 FONT_STACKS / ART_PRESETS 的 key 必须完全一致（改一处同步改另一处）。
+// 只接受枚举 key；真正的 CSS 声明由前端常量表查表生成，服务端绝不接收任意 CSS 字符串，
+// 任一非法属性/值 -> cleanStyles 返回 null -> 整个 POST 400，不会写入半套样式。
+const FONT_KEYS = ['serif', 'songti', 'fangsong', 'kaiti', 'sans', 'heiti', 'yuanti', 'light',
+  'georgia', 'times', 'helvetica', 'palatino', 'impact', 'script', 'mono', 'trebuchet'];
+const ART_KEYS = ['shadow', 'glow', 'emboss', 'retro', 'stroke', 'hollow',
+  'neon', 'outline', 'gold', 'rainbow'];
 const STYLE_PROPS = {
   fontSize: v => Number.isInteger(Number(v)) && Number(v) >= 8 && Number(v) <= 120,
   fontWeight: v => ['300', '400', '500', '600', '700', '800'].indexOf(String(v)) >= 0,
@@ -135,7 +142,11 @@ const STYLE_PROPS = {
   align: v => ['left', 'center', 'right'].indexOf(String(v)) >= 0,
   lineHeight: v => Number(v) >= 0.8 && Number(v) <= 2.5,
   letterSpacing: v => Number(v) >= -0.05 && Number(v) <= 0.5,
-  fontFamily: v => ['serif', 'sans'].indexOf(String(v)) >= 0
+  fontFamily: v => FONT_KEYS.indexOf(String(v)) >= 0,
+  fontStyle: v => ['normal', 'italic'].indexOf(String(v)) >= 0,
+  textTransform: v => ['none', 'uppercase', 'lowercase', 'capitalize'].indexOf(String(v)) >= 0,
+  textDecoration: v => ['none', 'underline', 'overline', 'line-through'].indexOf(String(v)) >= 0,
+  art: v => ART_KEYS.indexOf(String(v)) >= 0
 };
 
 // AI 文案编辑：密钥只存 D1 settings，绝不进公开仓库；AI 只返回数据，永不返回代码。
