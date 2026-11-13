@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<!-- build-tag: 2026-11-13 product-variants-v1 -->
+<!-- build-tag: 2026-11-13 product-variants-v2 -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LUNMONT — 发夹与饰品批发 | 义乌市玥岑进出口有限公司</title>
 <meta name="description" content="LUNMONT（义乌市玥岑进出口有限公司）— 发夹与饰品批发，支持小批量起订与出口订单。Yiwu Cenova Import and Export Co., Ltd.">
@@ -59,7 +59,8 @@
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:22px}
   .card{position:relative;height:400px;overflow:hidden;background:#efe9df}
   .card img{width:100%;height:100%;object-fit:cover;transition:transform .6s ease}
-  .card:hover img{transform:scale(1.04)}
+  /* 悬停放大：跟随鼠标位置、适中 1.5×（不做二次请求）；body.zoooff 时整体关闭 */
+  body:not(.zoooff) .card:hover img{transform:scale(1.5)}
   .card .shade{position:absolute;inset:0;background:linear-gradient(180deg,transparent 55%,rgba(15,14,12,.62))}
   .card .cap{position:absolute;left:22px;right:22px;bottom:20px;color:#fff}
   .card .cap h3{font-size:18px;letter-spacing:.15em;font-weight:600}
@@ -86,6 +87,13 @@
   .toolbar-v button{border:0;background:transparent;padding:7px 14px;font-size:12px;letter-spacing:.14em;
     cursor:pointer;color:var(--muted);font-family:"PingFang SC","Microsoft YaHei",sans-serif;transition:.2s}
   .toolbar-v button.on{background:var(--ink);color:#fff}
+  .zoomBtn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:#fff;
+    padding:7px 13px;font-size:12px;letter-spacing:.12em;color:var(--muted);cursor:pointer;
+    font-family:"PingFang SC","Microsoft YaHei",sans-serif;transition:.2s}
+  .zoomBtn .dot{width:8px;height:8px;border-radius:50%;background:#cfc6b8;transition:.2s}
+  .zoomBtn.on{color:var(--ink);border-color:var(--accent)}
+  .zoomBtn.on .dot{background:var(--accent)}
+  .zoomBtn:hover{border-color:var(--accent)}
   /* ---- 全部花色面板 ---- */
   .vpanel{position:fixed;inset:0;background:rgba(20,18,14,.86);z-index:60;display:none;
     align-items:center;justify-content:center;padding:5vh 4vw}
@@ -453,6 +461,8 @@
       <span class="toolbar-v" id="vModeSwitch" title="花色显示方式：缩略图 / 色点">
         <button data-vm="thumb">缩略图</button><button data-vm="dot">色点</button>
       </span>
+      <button type="button" class="zoomBtn on" id="zoomToggle" title="鼠标悬停放大产品图">
+        <span class="dot"></span>悬停放大</button>
       <input type="search" id="searchBox" placeholder="搜索产品 / Search">
       <select id="sortSel">
         <option value="new">最新上架</option>
@@ -1676,6 +1686,18 @@ function syncVMode(){
   document.querySelectorAll('#vModeSwitch button').forEach(b=>b.classList.toggle('on', b.dataset.vm===vMode));
 }
 
+/* 悬停放大开关：默认开，偏好存 localStorage（lm_zoom）。关闭时给 body 加 zoooff。 */
+let zoomOn = (function(){ try{ return localStorage.getItem('lm_zoom')!=='0'; }catch(e){ return true; } })();
+function syncZoom(){
+  document.body.classList.toggle('zoooff', !zoomOn);
+  const b=document.getElementById('zoomToggle');
+  if(b) b.classList.toggle('on', zoomOn);
+}
+function bindZoom(){
+  const b=document.getElementById('zoomToggle');
+  if(b) b.onclick=()=>{ zoomOn=!zoomOn; try{ localStorage.setItem('lm_zoom', zoomOn?'1':'0'); }catch(e){} syncZoom(); };
+}
+
 // 卡片数据统一形态：{id,name,category,image,sku,variants:[{id,sku,image,color,color2,pattern}]}
 function toCard(it){
   if (it && Array.isArray(it.variants)) return it;
@@ -1691,7 +1713,7 @@ function render(items) {
   const list = src.map(toCard);
   $('#empty').style.display = items.length ? 'none':'block';
   $('#statCount').textContent = items.length || '4';
-  syncVMode();
+  syncVMode(); syncZoom();
   for (const it of list) {
     const el=document.createElement('div'); el.className='card';
     el.dataset.pid=esc(String(it.id));
@@ -1733,6 +1755,18 @@ function render(items) {
   grid.querySelectorAll('.vmore').forEach(b=>b.onclick=e=>{
     e.stopPropagation();
     openVPanel(b.closest('.card')._card);
+  });
+  grid.querySelectorAll('.card').forEach(c=>{
+    const im=c.querySelector('img');
+    if(im){
+      c.onmousemove=e=>{
+        if(!zoomOn) return;
+        const r=c.getBoundingClientRect();
+        im.style.transformOrigin=((e.clientX-r.left)/r.width*100).toFixed(1)+'% '+
+                                 ((e.clientY-r.top)/r.height*100).toFixed(1)+'%';
+      };
+      c.onmouseleave=()=>{ im.style.transformOrigin='center center'; };
+    }
   });
   grid.querySelectorAll('.card').forEach(c=>c.onclick=e=>{
     if(editMode) return; // 编辑态点卡片不开灯箱，避让「改信息/删除」操作
@@ -1848,6 +1882,8 @@ function setInqTag(it){
 $('#inqTagClear').onclick=()=>{ inqProduct=''; $('#inqTag').hidden=true; };
 
 $('#searchBox').oninput=()=>{ searchQ=$('#searchBox').value; render(visibleItems()); };
+// 悬停放大开关绑定（必须在 DOM 就绪后调用一次；render 内部只同步视觉状态）
+bindZoom(); syncZoom();
 $('#sortSel').onchange=()=>{ sortMode=$('#sortSel').value; render(visibleItems()); };
 
 $('#inqForm').onsubmit=async e=>{
