@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<!-- build-tag: 2026-11-13 editor-flex-v2 -->
+<!-- build-tag: 2026-11-13 product-variants-v1 -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LUNMONT — 发夹与饰品批发 | 义乌市玥岑进出口有限公司</title>
 <meta name="description" content="LUNMONT（义乌市玥岑进出口有限公司）— 发夹与饰品批发，支持小批量起订与出口订单。Yiwu Cenova Import and Export Co., Ltd.">
@@ -56,7 +56,7 @@
   .sec-head{text-align:center;margin-bottom:52px}
   .sec-head small{font-size:12px;letter-spacing:.5em;color:var(--accent)}
   .sec-head h2{margin-top:14px;font-size:clamp(24px,3vw,34px);font-weight:600;letter-spacing:.15em}
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:22px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:22px}
   .card{position:relative;height:400px;overflow:hidden;background:#efe9df}
   .card img{width:100%;height:100%;object-fit:cover;transition:transform .6s ease}
   .card:hover img{transform:scale(1.04)}
@@ -64,6 +64,44 @@
   .card .cap{position:absolute;left:22px;right:22px;bottom:20px;color:#fff}
   .card .cap h3{font-size:18px;letter-spacing:.15em;font-weight:600}
   .card .cap p{font-size:13px;color:#e8e2d8;letter-spacing:.08em;margin-top:3px}
+  /* ---- 变体（花色）条：一张卡 = 一个产品，卡内切换 SKU ---- */
+  .card .vstrip{position:absolute;left:0;right:0;bottom:86px;display:flex;align-items:center;gap:8px;
+    padding:0 20px;overflow-x:auto;scrollbar-width:none;z-index:2}
+  .card .vstrip::-webkit-scrollbar{display:none}
+  .card .vsw{flex:0 0 auto;width:32px;height:32px;border-radius:50%;border:1px solid rgba(255,255,255,.5);
+    background:#efe9df;padding:0;cursor:pointer;overflow:hidden;transition:transform .2s,box-shadow .2s}
+  .card .vsw img{width:100%;height:100%;object-fit:cover;display:block;transition:none}
+  .card:hover .vsw img{transform:none}
+  .card .vsw:hover{transform:translateY(-2px)}
+  .card .vsw.on{box-shadow:0 0 0 2px rgba(15,14,12,.55),0 0 0 3.5px #d9a441}
+  .card .vsw.dot{overflow:visible;background:transparent;border:0}
+  .card .vsw.dot span{display:block;width:100%;height:100%;border-radius:50%;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.55);background:var(--c1,#ccc)}
+  .card .vsw.dot.pat span{background:repeating-conic-gradient(var(--c1,#ccc) 0 25%,var(--c2,#999) 25% 50%) 0 0/11px 11px}
+  .card .vmore{flex:0 0 auto;border:1px solid rgba(255,255,255,.5);background:rgba(15,14,12,.45);
+    color:#fff;font-size:11px;letter-spacing:.08em;padding:6px 10px;cursor:pointer;font-family:inherit}
+  .card .vmore:hover{background:rgba(15,14,12,.7)}
+  /* ---- 变体模式切换（产品区工具栏内）---- */
+  .toolbar-v{display:inline-flex;border:1px solid var(--line);background:#fff}
+  .toolbar-v button{border:0;background:transparent;padding:7px 14px;font-size:12px;letter-spacing:.14em;
+    cursor:pointer;color:var(--muted);font-family:"PingFang SC","Microsoft YaHei",sans-serif;transition:.2s}
+  .toolbar-v button.on{background:var(--ink);color:#fff}
+  /* ---- 全部花色面板 ---- */
+  .vpanel{position:fixed;inset:0;background:rgba(20,18,14,.86);z-index:60;display:none;
+    align-items:center;justify-content:center;padding:5vh 4vw}
+  .vpanel.open{display:flex}
+  .vpanel-inner{background:#fffdf9;max-width:940px;width:100%;max-height:88vh;display:flex;flex-direction:column}
+  .vpanel-head{display:flex;align-items:center;gap:14px;padding:20px 24px 14px;border-bottom:1px solid var(--line)}
+  .vpanel-head h4{font-size:16px;letter-spacing:.05em;font-weight:600;flex:1}
+  .vpanel-head small{font-size:11px;letter-spacing:.16em;color:var(--muted)}
+  .vpanel-head button{border:1px solid var(--line);background:transparent;font-size:17px;width:32px;height:32px;
+    cursor:pointer;color:var(--muted)}
+  .vpanel-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:14px;padding:20px 24px;overflow-y:auto}
+  .vpanel-item{cursor:pointer;position:relative}
+  .vpanel-item .im{aspect-ratio:1;background:#efe9df;overflow:hidden;border:1px solid transparent}
+  .vpanel-item:hover .im{border-color:#d9a441}
+  .vpanel-item img{width:100%;height:100%;object-fit:cover;display:block}
+  .vpanel-item p{font-size:11px;color:var(--muted);margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .card .del{position:absolute;top:14px;right:14px;background:rgba(15,14,12,.6);color:#fff;border:1px solid rgba(255,255,255,.4);padding:4px 12px;font-size:12px;cursor:pointer;letter-spacing:.1em;display:none}
   .edit-on .card .del{display:block}
   .empty,.loading,.error{padding:60px 0;text-align:center;color:var(--muted);letter-spacing:.1em}
@@ -412,6 +450,9 @@
   <div class="filterbar" id="filterBar" hidden>
     <div class="chips" id="filterChips"></div>
     <div class="tools">
+      <span class="toolbar-v" id="vModeSwitch" title="花色显示方式：缩略图 / 色点">
+        <button data-vm="thumb">缩略图</button><button data-vm="dot">色点</button>
+      </span>
       <input type="search" id="searchBox" placeholder="搜索产品 / Search">
       <select id="sortSel">
         <option value="new">最新上架</option>
@@ -422,6 +463,15 @@
   </div>
   <div class="grid" id="grid"></div>
 </section>
+
+<div class="vpanel" id="vpanel">
+  <div class="vpanel-inner">
+    <div class="vpanel-head">
+      <h4 id="vpTitle"></h4><small id="vpCount"></small><button id="vpClose">×</button>
+    </div>
+    <div class="vpanel-grid" id="vpGrid"></div>
+  </div>
+</div>
 
 <section class="admin" data-block="admin" data-block-label="管理区">
   <h2 data-content-key="admin_title">上传产品图片</h2>
@@ -1619,27 +1669,77 @@ document.addEventListener('input', e=>{
      e.target.hasAttribute('contenteditable')) contentLoadSeq++;
 }, true);
 
+/* 花色条显示方式：thumb=圆缩略图，dot=色点（颜色来自产品图实测，存在 products.color/color2）
+   偏好存 localStorage，默认缩略图。 */
+let vMode = (function(){ try{ return localStorage.getItem('lm_vmode')||'thumb'; }catch(e){ return 'thumb'; } })();
+function syncVMode(){
+  document.querySelectorAll('#vModeSwitch button').forEach(b=>b.classList.toggle('on', b.dataset.vm===vMode));
+}
+
+// 卡片数据统一形态：{id,name,category,image,sku,variants:[{id,sku,image,color,color2,pattern}]}
+function toCard(it){
+  if (it && Array.isArray(it.variants)) return it;
+  return { id: it.id, name: it.name, category: it.category, image: it.image, sku: it.sku,
+           variants: (it && it.sku) ? [{id: it.id, sku: it.sku, image: it.image,
+             color: it.color||'', color2: it.color2||it.color||'', pattern: !!it.pattern}] : [] };
+}
+
 function render(items) {
   $('#loading').style.display='none';
   const grid=$('#grid'); grid.innerHTML='';
-  const list = items.length ? items : DEFAULTS;
+  const src = items.length ? items : DEFAULTS;
+  const list = src.map(toCard);
   $('#empty').style.display = items.length ? 'none':'block';
   $('#statCount').textContent = items.length || '4';
+  syncVMode();
   for (const it of list) {
     const el=document.createElement('div'); el.className='card';
     el.dataset.pid=esc(String(it.id));
-    el.innerHTML = `<img src="${esc(it.image)}" alt="${esc(it.name)}" loading="lazy">
+    const vs = it.variants || [];
+    const show = vs.slice(0,6);
+    const extra = vs.length - show.length;
+    const lead = vs[0] || it;
+    let strip='';
+    if (vs.length > 1) {
+      const sws = show.map((v,i)=>{
+        if (vMode==='dot') {
+          const on = i===0 ? ' on':'';
+          const pat = v.pattern ? ' pat':'';
+          return `<button class="vsw dot${pat}${on}" data-i="${i}" title="${esc(v.label||v.color||'')}"
+            style="--c1:${esc(v.color||'#ccc')};--c2:${esc(v.color2||v.color||'#999')}"><span></span></button>`;
+        }
+        return `<button class="vsw${i===0?' on':''}" data-i="${i}" title="${esc(v.label||v.color||'')}">
+          <img src="${esc(v.image)}" alt="${esc(v.label||'')}" loading="lazy"></button>`;
+      }).join('');
+      strip = `<div class="vstrip">${sws}${extra>0?`<button class="vmore" data-more="1">+${extra}</button>`:''}</div>`;
+    }
+    el.innerHTML = `<img src="${esc(lead.image||it.image)}" alt="${esc(it.name)}" loading="lazy">
       <div class="shade"></div>
-      <div class="cap"><h3>${esc(it.name)}</h3><p class="sans">${esc(it.category||'')}</p></div>
+      ${strip}
+      <div class="cap"><h3>${esc(it.name)}</h3><p class="sans">${esc(it.category||'')}${vs.length>1?' · '+vs.length+' 款花色':''}</p></div>
       ${editMode && !String(it.id).startsWith('d') ? '<button class="pen sans" data-id="'+esc(it.id)+'">改信息</button><button class="del sans" data-id="'+esc(it.id)+'">删除</button>':''}`;
+    el._card = it;
     grid.appendChild(el);
   }
   // 铁律：innerHTML 重建的列表，事件绑定必须写在重建函数末尾
+  grid.querySelectorAll('.vsw').forEach(b=>b.onclick=e=>{
+    e.stopPropagation();
+    const card=b.closest('.card'); const it=card._card;
+    const v=it.variants[Number(b.dataset.i)]; if(!v) return;
+    card.querySelector('img').src = v.image;   // 只换主图，不重建（保留滚动位置与动效）
+    card.querySelectorAll('.vsw').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+  });
+  grid.querySelectorAll('.vmore').forEach(b=>b.onclick=e=>{
+    e.stopPropagation();
+    openVPanel(b.closest('.card')._card);
+  });
   grid.querySelectorAll('.card').forEach(c=>c.onclick=e=>{
     if(editMode) return; // 编辑态点卡片不开灯箱，避让「改信息/删除」操作
     if(e.target.closest('.del')||e.target.closest('.pen')) return;
-    const it=list.find(x=>String(x.id)===c.dataset.pid);
-    if(it && !String(it.id).startsWith('d')) openLightbox(it);
+    if(e.target.closest('.vstrip')) return;
+    const it=c._card;
+    if(it && !String(it.id).startsWith('d')) openLightbox(it.variants&&it.variants[0] ? Object.assign({}, it, it.variants[0]) : it);
   });
   grid.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{
     b.disabled=true;
@@ -1664,13 +1764,16 @@ function render(items) {
 }
 
 /* ---- 产品区：全量缓存 + 分类筛选 / 搜索 / 排序 / 灯箱（11-13 功能补齐）---- */
-let liveItems = [], filterCat = '', searchQ = '', sortMode = 'new';
+let liveItems = [], flatItems = [], filterCat = '', searchQ = '', sortMode = 'new';
 
 function visibleItems(){
   let list = liveItems.slice();
   if(filterCat) list = list.filter(x=>(x.category||'')===filterCat);
   const q = searchQ.trim().toLowerCase();
-  if(q) list = list.filter(x=>String(x.name||'').toLowerCase().indexOf(q)>=0 || String(x.sku||'').toLowerCase().indexOf(q)>=0);
+  // 卡片形态：搜索要覆盖卡名 + 全部 SKU（含花色名），否则搜花色搜不到
+  const hay = x => [x.name, x.sku, ...(x.variants||[]).map(v=>[v.sku,v.label,v.color].join(' '))]
+    .map(t=>String(t||'').toLowerCase()).join(' ');
+  if(q) list = list.filter(x=>hay(x).indexOf(q)>=0);
   if(sortMode==='name') list.sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'zh'));
   else if(sortMode==='cat') list.sort((a,b)=>String(a.category||'').localeCompare(String(b.category||''),'zh') || String(a.name||'').localeCompare(String(b.name||''),'zh'));
   else list.sort((a,b)=>Number(b.id)-Number(a.id));
@@ -1694,6 +1797,34 @@ function paintFilter(){
   // 铁律：innerHTML 重建的列表，事件绑定写在重建函数末尾
   box.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{ filterCat=b.dataset.v||''; paintFilter(); render(visibleItems()); });
 }
+/* ---- 全部花色面板：一个产品的所有 SKU ---- */
+function openVPanel(card){
+  const vs = card.variants || [];
+  $('#vpTitle').textContent = card.name || '';
+  $('#vpCount').textContent = vs.length + ' 款花色 / colors';
+  $('#vpGrid').innerHTML = vs.map((v,i)=>`<div class="vpanel-item" data-i="${i}">
+      <div class="im"><img src="${esc(v.image)}" alt="${esc(v.label||'')}" loading="lazy"></div>
+      <p>${esc(v.label||v.sku||'')}</p></div>`).join('');
+  $('#vpGrid').querySelectorAll('.vpanel-item').forEach(el=>el.onclick=()=>{
+    const c=[...$('#grid').children].find(x=>x._card===card);
+    const v=vs[Number(el.dataset.i)];
+    if(c && v){
+      c.querySelector('img').src=v.image;
+      c.querySelectorAll('.vsw').forEach(x=>x.classList.remove('on'));
+      const on=c.querySelector('.vsw[data-i="'+el.dataset.i+'"]');
+      if(on) on.classList.add('on');
+    }
+    $('#vpanel').classList.remove('open');
+  });
+  $('#vpanel').classList.add('open');
+}
+$('#vpClose').onclick=()=>$('#vpanel').classList.remove('open');
+$('#vpanel').onclick=e=>{ if(e.target.id==='vpanel') e.currentTarget.classList.remove('open'); };
+document.querySelectorAll('#vModeSwitch button').forEach(b=>b.onclick=()=>{
+  vMode=b.dataset.vm; try{ localStorage.setItem('lm_vmode',vMode); }catch(e){}
+  syncVMode(); render(visibleItems());
+});
+
 function openLightbox(it){
   $('#lbImg').src=it.image; $('#lbImg').alt=it.name||'';
   $('#lbName').textContent=it.name||'';
@@ -1815,7 +1946,9 @@ async function load(){
     const r=await api('/products');
     if(!r.ok) throw new Error(r.status);
     const d=await r.json();
-    liveItems = d.products||[];
+    // 服务端按 parent_sku 聚合成 cards；老后端（无 cards 字段）自动退回扁平行
+    liveItems = (d.cards && d.cards.length) ? d.cards : (d.products||[]);
+    flatItems = d.products || liveItems;
     paintFilter();
     render(visibleItems());
   }catch(e){
