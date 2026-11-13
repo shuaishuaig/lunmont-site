@@ -2288,7 +2288,11 @@ function openLightbox(it){
 function closeLightbox(){ $('#lightbox').hidden=true; document.body.style.overflow=''; }
 $('#lbClose').onclick=closeLightbox;
 $('#lightbox').onclick=e=>{ if(e.target.id==='lightbox') closeLightbox(); };
-document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeLightbox(); if($('#lightbox').hidden===false) return; } });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){
+  // 商城弹层优先于灯箱收起
+  const anyShop=['cartPanel','authPanel','checkoutPanel','ordersPanel'].some(id=>{const el=$('#'+id);return el&&!el.hidden;});
+  if(anyShop){ closeAllShop(); return; }
+  closeLightbox(); if($('#lightbox').hidden===false) return; } });
 
 let inqProduct='';
 function setInqTag(it){
