@@ -58,9 +58,10 @@
   .sec-head h2{margin-top:14px;font-size:clamp(24px,3vw,34px);font-weight:600;letter-spacing:.15em}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:22px}
   .card{position:relative;height:400px;overflow:hidden;background:#efe9df}
-  .card img{width:100%;height:100%;object-fit:cover;transition:transform .6s ease}
+  /* 只作用于卡片主图（:scope 直系子元素）—— 变体缩略图是同名后代 img，不能被一起放大 */
+  .card > img{width:100%;height:100%;object-fit:cover;transition:transform .6s ease;will-change:transform}
   /* 悬停放大：跟随鼠标位置、适中 1.5×（不做二次请求）；body.zoooff 时整体关闭 */
-  body:not(.zoooff) .card:hover img{transform:scale(1.5)}
+  body:not(.zoooff) .card:hover > img{transform:scale(1.5)}
   .card .shade{position:absolute;inset:0;background:linear-gradient(180deg,transparent 55%,rgba(15,14,12,.62))}
   .card .cap{position:absolute;left:22px;right:22px;bottom:20px;color:#fff}
   .card .cap h3{font-size:18px;letter-spacing:.15em;font-weight:600}
@@ -71,8 +72,7 @@
   .card .vstrip::-webkit-scrollbar{display:none}
   .card .vsw{flex:0 0 auto;width:32px;height:32px;border-radius:50%;border:1px solid rgba(255,255,255,.5);
     background:#efe9df;padding:0;cursor:pointer;overflow:hidden;transition:transform .2s,box-shadow .2s}
-  .card .vsw img{width:100%;height:100%;object-fit:cover;display:block;transition:none}
-  .card:hover .vsw img{transform:none}
+  .card .vsw img{width:100%;height:100%;object-fit:cover;display:block;transition:none;transform:none!important}
   .card .vsw:hover{transform:translateY(-2px)}
   .card .vsw.on{box-shadow:0 0 0 2px rgba(15,14,12,.55),0 0 0 3.5px #d9a441}
   .card .vsw.dot{overflow:visible;background:transparent;border:0}
@@ -1748,7 +1748,7 @@ function render(items) {
     e.stopPropagation();
     const card=b.closest('.card'); const it=card._card;
     const v=it.variants[Number(b.dataset.i)]; if(!v) return;
-    card.querySelector('img').src = v.image;   // 只换主图，不重建（保留滚动位置与动效）
+    card.querySelector(':scope > img').src = v.image;   // 只换主图，不重建（保留滚动位置与动效）
     card.querySelectorAll('.vsw').forEach(x=>x.classList.remove('on'));
     b.classList.add('on');
   });
@@ -1757,7 +1757,7 @@ function render(items) {
     openVPanel(b.closest('.card')._card);
   });
   grid.querySelectorAll('.card').forEach(c=>{
-    const im=c.querySelector('img');
+    const im=c.querySelector(':scope > img');
     if(im){
       c.onmousemove=e=>{
         if(!zoomOn) return;
@@ -1843,7 +1843,7 @@ function openVPanel(card){
     const c=[...$('#grid').children].find(x=>x._card===card);
     const v=vs[Number(el.dataset.i)];
     if(c && v){
-      c.querySelector('img').src=v.image;
+      c.querySelector(':scope > img').src=v.image;
       c.querySelectorAll('.vsw').forEach(x=>x.classList.remove('on'));
       const on=c.querySelector('.vsw[data-i="'+el.dataset.i+'"]');
       if(on) on.classList.add('on');
