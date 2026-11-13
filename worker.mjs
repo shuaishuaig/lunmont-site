@@ -1,7 +1,7 @@
 // LUNMONT site worker: static assets + products/content APIs backed by D1.
 // Writes (POST/DELETE) require header X-Admin-Key matching D1 settings.admin_key.
 
-// build-tag: 2026-11-13 variants-migrate-v2
+// build-tag: 2026-11-13 taxonomy-v5
 const MAX_IMAGE = 700000; // dataURL char cap, keeps request body < 1MiB
 const MAX_CONTENT_VALUE = 4000;
 
@@ -31,9 +31,16 @@ const PRODUCTS_DDL = [
   // 前端色点模式直接吃这三个值，不再靠色名猜色。
   "ALTER TABLE products ADD COLUMN color TEXT DEFAULT ''",
   "ALTER TABLE products ADD COLUMN color2 TEXT DEFAULT ''",
-  "ALTER TABLE products ADD COLUMN pattern INTEGER DEFAULT 0"
+  "ALTER TABLE products ADD COLUMN pattern INTEGER DEFAULT 0",
+  // 分类归纳（tools/_gen_site_taxonomy.py 产物）：一张卡 = 一个产品，
+  // 四个维度都是卡级属性，所以同 parent_sku 的行写相同的值。
+  "ALTER TABLE products ADD COLUMN material TEXT DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN size_type TEXT DEFAULT ''",
+  // styles 是多值（几何+镶钻），逗号分隔存储；查询一律在应用层 split，不做 SQL LIKE
+  "ALTER TABLE products ADD COLUMN styles TEXT DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN family TEXT DEFAULT ''"
 ];
-const PRODUCTS_MIGRATION_KEY = 'products_v4';
+const PRODUCTS_MIGRATION_KEY = 'products_v5';
 let productsReady = false;
 
 // 稳定业务键：有 sku 用 sku（产品改了名/换了图也认得出来），否则用 名称+分类。
@@ -324,7 +331,8 @@ async function ensureProducts(env) {
   const rows = all.results || [];
   const cols = rows.length ? Object.keys(rows[0]) : [];
   if (rows.length) {
-    for (const need of ['updated_at', 'parent_sku', 'color', 'color2', 'pattern']) {
+    for (const need of ['updated_at', 'parent_sku', 'color', 'color2', 'pattern',
+                        'material', 'size_type', 'styles', 'family']) {
       if (cols.indexOf(need) < 0) throw new Error('products migration incomplete: missing column ' + need);
     }
   }
@@ -382,12 +390,19 @@ function cleanProduct(body) {
   const color = cleanColor(body && body.color);
   const color2 = cleanColor(body && body.color2) || color;
   const pattern = (body && (body.pattern === 1 || body.pattern === true)) ? 1 : 0;
+  // 分类归纳：卡级属性，styles 多值用逗号拼接（前端 split，不做 SQL LIKE）
+  const material = String((body && body.material) || '').trim().slice(0, 24);
+  const size_type = String((body && (body.size_type || body.size)) || '').trim().slice(0, 12);
+  const rawStyles = body && body.styles;
+  const styles = (Array.isArray(rawStyles) ? rawStyles : String(rawStyles || '').split(','))
+    .map(s => String(s || '').trim()).filter(Boolean).slice(0, 6).join(',');
+  const family = String((body && body.family) || '').trim().slice(0, 16);
   if (!name) return { error: 'name required', status: 400 };
   if (!image.startsWith('data:image/') && !/^https?:\/\//.test(image))
     return { error: 'image must be data URL or http(s) URL', status: 400 };
   if (image.length > MAX_IMAGE) return { error: 'image too large', status: 413 };
   return { name, category, image, sku, ukey: productKey({ sku, name, category }),
-           parent_sku, color, color2, pattern };
+           parent_sku, color, color2, pattern, material, size_type, styles, family };
 }
 
 // 批量幂等写入：一次读全表判重 + 一次 DB.batch 提交，2 个往返搞定任意条数。
@@ -396,7 +411,8 @@ function cleanProduct(body) {
 async function upsertMany(env, items) {
   // ORDER BY id：同键多行（历史重复）时 Map 后写覆盖，命中的是最新那条
   const all = await env.DB.prepare(
-    'SELECT id, name, category, image, sku, ukey, parent_sku, color, color2, pattern FROM products ORDER BY id'
+    'SELECT id, name, category, image, sku, ukey, parent_sku, color, color2, pattern, ' +
+    'material, size_type, styles, family FROM products ORDER BY id'
   ).all();
   const cur = new Map();
   for (const p of (all.results || [])) cur.set(p.ukey, p);
@@ -404,7 +420,9 @@ async function upsertMany(env, items) {
   const stmts = [];
   const sameVariant = (ex, it) =>
     (ex.parent_sku || '') === it.parent_sku && (ex.color || '') === it.color &&
-    (ex.color2 || '') === it.color2 && Number(ex.pattern || 0) === Number(it.pattern || 0);
+    (ex.color2 || '') === it.color2 && Number(ex.pattern || 0) === Number(it.pattern || 0) &&
+    (ex.material || '') === (it.material || '') && (ex.size_type || '') === (it.size_type || '') &&
+    (ex.styles || '') === (it.styles || '') && (ex.family || '') === (it.family || '');
   for (const it of items) {
     let ex = cur.get(it.ukey);
     let adoptFrom = null;
@@ -419,13 +437,17 @@ async function upsertMany(env, items) {
       created++;
       // 不用 ON CONFLICT：唯一索引在「存在历史重复」时建不上，依赖它会让整批插入失败
       stmts.push(env.DB.prepare(
-        "INSERT INTO products (name, category, image, sku, ukey, parent_sku, color, color2, pattern, updated_at) " +
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))"
+        "INSERT INTO products (name, category, image, sku, ukey, parent_sku, color, color2, pattern, " +
+        "material, size_type, styles, family, updated_at) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))"
       ).bind(it.name, it.category, it.image, it.sku, it.ukey,
-             it.parent_sku, it.color, it.color2, it.pattern));
+             it.parent_sku, it.color, it.color2, it.pattern,
+             it.material, it.size_type, it.styles, it.family));
       cur.set(it.ukey, { id: -1, name: it.name, category: it.category, image: it.image,
                          sku: it.sku, ukey: it.ukey, parent_sku: it.parent_sku,
-                         color: it.color, color2: it.color2, pattern: it.pattern });
+                         color: it.color, color2: it.color2, pattern: it.pattern,
+                         material: it.material, size_type: it.size_type,
+                         styles: it.styles, family: it.family });
       continue;
     }
     const changed = ex.name !== it.name || (ex.category || '') !== it.category ||
@@ -441,13 +463,16 @@ async function upsertMany(env, items) {
       updated++;
       stmts.push(env.DB.prepare(
         "UPDATE products SET name=?, category=?, image=?, sku=?, ukey=?, parent_sku=?, color=?, color2=?, " +
-        "pattern=?, updated_at=datetime('now') WHERE ukey=?"
+        "pattern=?, material=?, size_type=?, styles=?, family=?, updated_at=datetime('now') WHERE ukey=?"
       ).bind(it.name, it.category, it.image, it.sku, it.ukey,
-             it.parent_sku, it.color, it.color2, it.pattern, ex.ukey));
+             it.parent_sku, it.color, it.color2, it.pattern,
+             it.material, it.size_type, it.styles, it.family, ex.ukey));
     } else unchanged++;
     cur.set(it.ukey, { id: ex.id, name: it.name, category: it.category, image: it.image,
                        sku: it.sku, ukey: it.ukey, parent_sku: it.parent_sku,
-                       color: it.color, color2: it.color2, pattern: it.pattern });
+                       color: it.color, color2: it.color2, pattern: it.pattern,
+                       material: it.material, size_type: it.size_type,
+                       styles: it.styles, family: it.family });
   }
   if (stmts.length) await env.DB.batch(stmts);
   return { created, updated, unchanged, adopted };
@@ -460,7 +485,8 @@ async function upsertMany(env, items) {
 // 而升级后带 sku 发布算出的是 sku: 键 —— 只按新键查会查不到 → 重复发布反而多出 149 条。
 // 所以新键没命中时，再用 nm: 键找一次，命中就把该行「接管」成 sku: 键（原地更新，不新增）。
 async function upsertProduct(env, item) {
-  const COLS = 'id, name, category, image, sku, ukey, parent_sku, color, color2, pattern';
+  const COLS = 'id, name, category, image, sku, ukey, parent_sku, color, color2, pattern, ' +
+               'material, size_type, styles, family';
   let ex = await env.DB.prepare('SELECT ' + COLS + ' FROM products WHERE ukey=?')
     .bind(item.ukey).first();
   let adopted = false;
@@ -476,22 +502,27 @@ async function upsertProduct(env, item) {
     const changed = ex.name !== item.name || (ex.category || '') !== item.category ||
       ex.image !== item.image || (ex.sku || '') !== item.sku || ex.ukey !== item.ukey ||
       (ex.parent_sku || '') !== item.parent_sku || (ex.color || '') !== item.color ||
-      (ex.color2 || '') !== item.color2 || Number(ex.pattern || 0) !== Number(item.pattern || 0);
+      (ex.color2 || '') !== item.color2 || Number(ex.pattern || 0) !== Number(item.pattern || 0) ||
+      (ex.material || '') !== (item.material || '') || (ex.size_type || '') !== (item.size_type || '') ||
+      (ex.styles || '') !== (item.styles || '') || (ex.family || '') !== (item.family || '');
     if (changed) {
       await env.DB.prepare(
         "UPDATE products SET name=?, category=?, image=?, sku=?, ukey=?, parent_sku=?, color=?, color2=?, " +
-        "pattern=?, updated_at=datetime('now') WHERE id=?"
+        "pattern=?, material=?, size_type=?, styles=?, family=?, updated_at=datetime('now') WHERE id=?"
       ).bind(item.name, item.category, item.image, item.sku, item.ukey,
-             item.parent_sku, item.color, item.color2, item.pattern, ex.id).run();
+             item.parent_sku, item.color, item.color2, item.pattern,
+             item.material, item.size_type, item.styles, item.family, ex.id).run();
     }
     return { id: ex.id, action: changed ? 'updated' : 'unchanged', adopted };
   }
   try {
     const r = await env.DB.prepare(
-      "INSERT INTO products (name, category, image, sku, ukey, parent_sku, color, color2, pattern, updated_at) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))"
+      "INSERT INTO products (name, category, image, sku, ukey, parent_sku, color, color2, pattern, " +
+      "material, size_type, styles, family, updated_at) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))"
     ).bind(item.name, item.category, item.image, item.sku, item.ukey,
-           item.parent_sku, item.color, item.color2, item.pattern).run();
+           item.parent_sku, item.color, item.color2, item.pattern,
+           item.material, item.size_type, item.styles, item.family).run();
     return { id: r.meta && r.meta.last_row_id, action: 'created' };
   } catch (e) {
     // ① 极端情况：变体列还没补上（迁移失败）→ 退回只写基础列，保证写入不瘫
@@ -674,32 +705,44 @@ export default {
       // 一条 SELECT 报错就被 catch 成空数组 —— 首页产品区会整体消失，且完全静默）
       let rows = [];
       let hasVariant = true;
+      let hasTaxonomy = true;
       try {
         const r = await env.DB.prepare(
-          'SELECT id, name, category, image, sku, parent_sku, color, color2, pattern ' +
+          'SELECT id, name, category, image, sku, parent_sku, color, color2, pattern, ' +
+          'material, size_type, styles, family ' +
           'FROM products ORDER BY id DESC LIMIT 500'
         ).all();
         rows = r.results || [];
       } catch (e) {
-        hasVariant = false; // 变体列未补齐 -> 退回老查询，产品区照常出数据
+        // 分类列未补齐时单独降级：先退回只有变体列的查询，保住变体功能
+        hasTaxonomy = false;
         try {
           const r = await env.DB.prepare(
-            'SELECT id, name, category, image, sku FROM products ORDER BY id DESC LIMIT 500'
+            'SELECT id, name, category, image, sku, parent_sku, color, color2, pattern ' +
+            'FROM products ORDER BY id DESC LIMIT 500'
           ).all();
           rows = r.results || [];
-        } catch (e1) {
-          // 兜底：老 schema 只有四列时也要能出数据
+        } catch (e) {
+          hasVariant = false; // 变体列未补齐 -> 退回老查询，产品区照常出数据
           try {
-            const r2 = await env.DB.prepare(
-              'SELECT id, name, category, image FROM products ORDER BY id DESC LIMIT 500'
+            const r = await env.DB.prepare(
+              'SELECT id, name, category, image, sku FROM products ORDER BY id DESC LIMIT 500'
             ).all();
-            rows = r2.results || [];
-          } catch (e2) {
-            return json({ products: [], detail: String(e2 && e2.message || e2).slice(0, 160) }, 200);
+            rows = r.results || [];
+          } catch (e1) {
+            // 兜底：老 schema 只有四列时也要能出数据
+            try {
+              const r2 = await env.DB.prepare(
+                'SELECT id, name, category, image FROM products ORDER BY id DESC LIMIT 500'
+              ).all();
+              rows = r2.results || [];
+            } catch (e2) {
+              return json({ products: [], detail: String(e2 && e2.message || e2).slice(0, 160) }, 200);
+            }
           }
         }
       }
-      const out = { products: rows, grouped: hasVariant };
+      const out = { products: rows, grouped: hasVariant, taxonomy: hasTaxonomy };
       // 变体分组视图：同一 parent_sku 的行收成一张卡（父行自身带图，作为卡片主图）。
       // parent_sku 为空的行各自独立成卡 —— 老数据行为完全不变。
       // ?flat=1 返回扁平行（发布对账 / 管理后台用）。
@@ -710,9 +753,18 @@ export default {
           let card = byKey.get(key);
           if (!card) {
             card = { key, parent_sku: p.parent_sku || '', id: p.id, name: p.name,
-                     category: p.category, image: p.image, sku: p.sku, variants: [] };
+                     category: p.category, image: p.image, sku: p.sku, variants: [],
+                     material: p.material || '', size: p.size_type || '',
+                     styles: p.styles ? String(p.styles).split(',').filter(Boolean) : [],
+                     family: p.family || '' };
             byKey.set(key, card);
           }
+          // 卡级属性散落在各行时，哪行有值就用哪行（分类只写在其中一行也不会丢）
+          if (!card.material && p.material) card.material = p.material;
+          if (!card.size && p.size_type) card.size = p.size_type;
+          if (!card.family && p.family) card.family = p.family;
+          if ((!card.styles || !card.styles.length) && p.styles)
+            card.styles = String(p.styles).split(',').filter(Boolean);
           card.variants.push({
             id: p.id, sku: p.sku, image: p.image, name: p.name,
             color: p.color || '', color2: p.color2 || p.color || '',
