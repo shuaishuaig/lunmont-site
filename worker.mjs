@@ -1,7 +1,11 @@
 // LUNMONT site worker: static assets + products/content APIs backed by D1.
 // Writes (POST/DELETE) require header X-Admin-Key matching D1 settings.admin_key.
+//
+// 管理入口（2026-11-13）：首页不再有「管理模式」链接，改为 /admin 登录页。
+// 关键：门禁在服务端 —— 所有写接口不论走哪个前端都先过 checkAdmin，
+// 前端登录只决定「能不能拿到输入框」，绝不承担鉴权职责。
 
-// build-tag: 2026-11-13 taxonomy-v5
+// build-tag: 2026-11-13 admin-login-v1 taxonomy-v5
 const MAX_IMAGE = 700000; // dataURL char cap, keeps request body < 1MiB
 const MAX_CONTENT_VALUE = 4000;
 
@@ -276,7 +280,7 @@ const DEFAULT_CONTENT = {
   'stat3_label': '进出口直营',
   'products_kicker': 'COLLECTIONS',
   'products_title': '产品系列',
-  'empty_text': '暂无产品。进入「管理模式」上传你的产品图片即可自动生成卡片。',
+  'empty_text': '暂无产品，请稍后再看或直接联系我们。',
   'admin_title': '上传产品图片',
   'admin_hint': '选择图片后自动压缩并生成产品卡片，可多选一次上传多张。产品名选填，分类决定卡片归类。',
   'contact_kicker': 'CONTACT',
@@ -542,6 +546,86 @@ async function upsertProduct(env, item) {
   }
 }
 
+// /admin 管理登录页：纯静态外壳，交给下面 /api/admin/login 校验管理密钥。
+const ADMIN_PAGE = `<!DOCTYPE html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>管理登录 · LUNMONT</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+  background:#f7f4ee;color:#0f0e0c;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+.card{width:min(420px,92vw);background:#fffdf9;border:1px solid #e2d9c8;padding:34px 30px;
+  box-shadow:0 18px 60px rgba(15,14,12,.10)}
+.brand{font-size:13px;letter-spacing:.42em;color:#0f0e0c;margin-bottom:6px}
+h1{font-size:19px;font-weight:500;letter-spacing:.06em;margin:0 0 4px}
+.sub{font-size:12px;color:#8a7a60;letter-spacing:.04em;margin-bottom:22px}
+label{display:block;font-size:11px;letter-spacing:.18em;color:#6b5a3e;margin:0 0 6px}
+input{width:100%;padding:11px 12px;border:1px solid #d9cdb6;background:#fff;font-size:14px;
+  font-family:inherit;letter-spacing:.06em;border-radius:0}
+input:focus{outline:none;border-color:#d9a441}
+button{width:100%;margin-top:18px;padding:12px;border:1px solid #d9a441;background:#d9a441;
+  color:#0f0e0c;font-size:13px;letter-spacing:.26em;cursor:pointer;font-family:inherit}
+button:disabled{opacity:.55;cursor:wait}
+.st{min-height:20px;margin-top:13px;font-size:12px;letter-spacing:.04em;color:#8a7a60}
+.st.err{color:#c0392b}.st.ok{color:#1e7a44}
+.back{display:inline-block;margin-top:18px;font-size:12px;color:#8a7a60;text-decoration:none;
+  letter-spacing:.06em;border-bottom:1px solid #d9cdb6;padding-bottom:2px}
+</style></head>
+<body>
+<form class="card" id="loginForm" autocomplete="off">
+  <div class="brand">LUNMONT</div>
+  <h1>管理员登录</h1>
+  <div class="sub">仅管理员可见 · 访客请返回首页</div>
+  <label for="key">管理密钥 / Admin key</label>
+  <input id="key" type="password" placeholder="请输入管理密钥" autocomplete="current-password" required>
+  <button type="submit" id="go">登 录</button>
+  <div class="st" id="st"></div>
+  <a class="back" href="/">← 返回首页</a>
+</form>
+<script>
+(function(){
+  var form = document.getElementById('loginForm');
+  var input = document.getElementById('key');
+  var go = document.getElementById('go');
+  var st = document.getElementById('st');
+  function say(m, cls){ st.textContent = m || ''; st.className = 'st' + (cls ? ' ' + cls : ''); }
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    var k = (input.value || '').trim();
+    if(!k){ say('请输入管理密钥', 'err'); return; }
+    go.disabled = true; say('正在校验…');
+    fetch('/api/admin/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      credentials: 'same-origin',
+      body: JSON.stringify({key: k})
+    }).then(function(r){
+      return r.json().then(function(b){ return {status: r.status, body: b}; });
+    }).then(function(res){
+      if(res.status === 200 && res.body && res.body.ok){
+        // ⚠️ 密钥只放 sessionStorage：关标签页即失效，不落长期 cookie
+        sessionStorage.setItem('lunmont_admin_key', k);
+        say('登录成功，正在进入…', 'ok');
+        location.replace('/?admin=1');
+        return;
+      }
+      go.disabled = false;
+      say(res.status === 401 ? '管理密钥错误' : '登录失败，请稍后重试', 'err');
+      input.select();
+    }).catch(function(){
+      go.disabled = false;
+      say('网络异常，请重试', 'err');
+    });
+  });
+  input.focus();
+})();
+</script>
+</body></html>`;
+
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -695,6 +779,34 @@ export default {
       return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
     }
     const route = path.slice(4); // after /api
+
+    // —— 管理登录页 + 登录校验（公开，登录本身就是换取校验结果）——
+    // /admin 走 Worker 而不是静态资源：可直接 302 到登录页，且不占 assets 路径。
+    if ((path === '/admin' || path === '/admin/') && method === 'GET') {
+      return new Response(ADMIN_PAGE, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          // 登录页永不缓存，避免 CF 边缘把旧外壳发给下一位访客
+          'Cache-Control': 'no-store',
+          'X-Robots-Tag': 'noindex, nofollow'
+        }
+      });
+    }
+    if (route === '/admin/login' && method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+      // 复用同一把内部密钥做比对（probe = 伪造一个只带 X-Admin-Key 的请求）
+      const probe = new Request(request.url, { headers: { 'X-Admin-Key': String((body && body.key) || '') } });
+      if (!(await checkAdmin(env, probe))) return json({ error: 'unauthorized' }, 401);
+      // 顺带回是否还是出厂密钥：前端登录后提示「该换密钥了」，但绝不回密钥本身
+      let weak = false;
+      try {
+        const r = await env.DB.prepare("SELECT value FROM settings WHERE key='admin_key'").first();
+        weak = !!r && r.value === 'lunmont2026';
+      } catch (e) { weak = false; }
+      return json({ ok: true, weakDefaultKey: weak });
+    }
 
     if (route === '/products' && method === 'GET') {
       // ⚠️ 必须先跑迁移：变体列（parent_sku/color/color2/pattern）只在 ensureProducts 里补，
