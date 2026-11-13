@@ -42,9 +42,11 @@ const PRODUCTS_DDL = [
   "ALTER TABLE products ADD COLUMN size_type TEXT DEFAULT ''",
   // styles 是多值（几何+镶钻），逗号分隔存储；查询一律在应用层 split，不做 SQL LIKE
   "ALTER TABLE products ADD COLUMN styles TEXT DEFAULT ''",
-  "ALTER TABLE products ADD COLUMN family TEXT DEFAULT ''"
+  "ALTER TABLE products ADD COLUMN family TEXT DEFAULT ''",
+  // 商城价格（USD，两位小数用 REAL 存）。0 = 未定价（前端显示「询价」，购物车拒加）。
+  "ALTER TABLE products ADD COLUMN price REAL DEFAULT 0"
 ];
-const PRODUCTS_MIGRATION_KEY = 'products_v5';
+const PRODUCTS_MIGRATION_KEY = 'products_v6';
 let productsReady = false;
 
 // 稳定业务键：有 sku 用 sku（产品改了名/换了图也认得出来），否则用 名称+分类。
@@ -336,7 +338,7 @@ async function ensureProducts(env) {
   const cols = rows.length ? Object.keys(rows[0]) : [];
   if (rows.length) {
     for (const need of ['updated_at', 'parent_sku', 'color', 'color2', 'pattern',
-                        'material', 'size_type', 'styles', 'family']) {
+                        'material', 'size_type', 'styles', 'family', 'price']) {
       if (cols.indexOf(need) < 0) throw new Error('products migration incomplete: missing column ' + need);
     }
   }
@@ -401,12 +403,15 @@ function cleanProduct(body) {
   const styles = (Array.isArray(rawStyles) ? rawStyles : String(rawStyles || '').split(','))
     .map(s => String(s || '').trim()).filter(Boolean).slice(0, 6).join(',');
   const family = String((body && body.family) || '').trim().slice(0, 16);
+  // 商城价格：负数/非法=0（未定价）；上限封顶防手滑；保留两位小数
+  let price = Number(body && body.price);
+  price = (isFinite(price) && price > 0) ? Math.min(Math.round(price * 100) / 100, 1000000) : 0;
   if (!name) return { error: 'name required', status: 400 };
   if (!image.startsWith('data:image/') && !/^https?:\/\//.test(image))
     return { error: 'image must be data URL or http(s) URL', status: 400 };
   if (image.length > MAX_IMAGE) return { error: 'image too large', status: 413 };
   return { name, category, image, sku, ukey: productKey({ sku, name, category }),
-           parent_sku, color, color2, pattern, material, size_type, styles, family };
+           parent_sku, color, color2, pattern, material, size_type, styles, family, price };
 }
 
 // 批量幂等写入：一次读全表判重 + 一次 DB.batch 提交，2 个往返搞定任意条数。
@@ -416,7 +421,7 @@ async function upsertMany(env, items) {
   // ORDER BY id：同键多行（历史重复）时 Map 后写覆盖，命中的是最新那条
   const all = await env.DB.prepare(
     'SELECT id, name, category, image, sku, ukey, parent_sku, color, color2, pattern, ' +
-    'material, size_type, styles, family FROM products ORDER BY id'
+    'material, size_type, styles, family, price FROM products ORDER BY id'
   ).all();
   const cur = new Map();
   for (const p of (all.results || [])) cur.set(p.ukey, p);
@@ -426,7 +431,8 @@ async function upsertMany(env, items) {
     (ex.parent_sku || '') === it.parent_sku && (ex.color || '') === it.color &&
     (ex.color2 || '') === it.color2 && Number(ex.pattern || 0) === Number(it.pattern || 0) &&
     (ex.material || '') === (it.material || '') && (ex.size_type || '') === (it.size_type || '') &&
-    (ex.styles || '') === (it.styles || '') && (ex.family || '') === (it.family || '');
+    (ex.styles || '') === (it.styles || '') && (ex.family || '') === (it.family || '') &&
+    Number(ex.price || 0) === Number(it.price || 0);
   for (const it of items) {
     let ex = cur.get(it.ukey);
     let adoptFrom = null;
@@ -442,16 +448,16 @@ async function upsertMany(env, items) {
       // 不用 ON CONFLICT：唯一索引在「存在历史重复」时建不上，依赖它会让整批插入失败
       stmts.push(env.DB.prepare(
         "INSERT INTO products (name, category, image, sku, ukey, parent_sku, color, color2, pattern, " +
-        "material, size_type, styles, family, updated_at) " +
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))"
+        "material, size_type, styles, family, price, updated_at) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))"
       ).bind(it.name, it.category, it.image, it.sku, it.ukey,
              it.parent_sku, it.color, it.color2, it.pattern,
-             it.material, it.size_type, it.styles, it.family));
+             it.material, it.size_type, it.styles, it.family, it.price));
       cur.set(it.ukey, { id: -1, name: it.name, category: it.category, image: it.image,
                          sku: it.sku, ukey: it.ukey, parent_sku: it.parent_sku,
                          color: it.color, color2: it.color2, pattern: it.pattern,
                          material: it.material, size_type: it.size_type,
-                         styles: it.styles, family: it.family });
+                         styles: it.styles, family: it.family, price: it.price });
       continue;
     }
     const changed = ex.name !== it.name || (ex.category || '') !== it.category ||
@@ -467,16 +473,16 @@ async function upsertMany(env, items) {
       updated++;
       stmts.push(env.DB.prepare(
         "UPDATE products SET name=?, category=?, image=?, sku=?, ukey=?, parent_sku=?, color=?, color2=?, " +
-        "pattern=?, material=?, size_type=?, styles=?, family=?, updated_at=datetime('now') WHERE ukey=?"
+        "pattern=?, material=?, size_type=?, styles=?, family=?, price=?, updated_at=datetime('now') WHERE ukey=?"
       ).bind(it.name, it.category, it.image, it.sku, it.ukey,
              it.parent_sku, it.color, it.color2, it.pattern,
-             it.material, it.size_type, it.styles, it.family, ex.ukey));
+             it.material, it.size_type, it.styles, it.family, it.price, ex.ukey));
     } else unchanged++;
     cur.set(it.ukey, { id: ex.id, name: it.name, category: it.category, image: it.image,
                        sku: it.sku, ukey: it.ukey, parent_sku: it.parent_sku,
                        color: it.color, color2: it.color2, pattern: it.pattern,
                        material: it.material, size_type: it.size_type,
-                       styles: it.styles, family: it.family });
+                       styles: it.styles, family: it.family, price: it.price });
   }
   if (stmts.length) await env.DB.batch(stmts);
   return { created, updated, unchanged, adopted };
@@ -490,7 +496,7 @@ async function upsertMany(env, items) {
 // 所以新键没命中时，再用 nm: 键找一次，命中就把该行「接管」成 sku: 键（原地更新，不新增）。
 async function upsertProduct(env, item) {
   const COLS = 'id, name, category, image, sku, ukey, parent_sku, color, color2, pattern, ' +
-               'material, size_type, styles, family';
+               'material, size_type, styles, family, price';
   let ex = await env.DB.prepare('SELECT ' + COLS + ' FROM products WHERE ukey=?')
     .bind(item.ukey).first();
   let adopted = false;
@@ -508,25 +514,26 @@ async function upsertProduct(env, item) {
       (ex.parent_sku || '') !== item.parent_sku || (ex.color || '') !== item.color ||
       (ex.color2 || '') !== item.color2 || Number(ex.pattern || 0) !== Number(item.pattern || 0) ||
       (ex.material || '') !== (item.material || '') || (ex.size_type || '') !== (item.size_type || '') ||
-      (ex.styles || '') !== (item.styles || '') || (ex.family || '') !== (item.family || '');
+      (ex.styles || '') !== (item.styles || '') || (ex.family || '') !== (item.family || '') ||
+      Number(ex.price || 0) !== Number(item.price || 0);
     if (changed) {
       await env.DB.prepare(
         "UPDATE products SET name=?, category=?, image=?, sku=?, ukey=?, parent_sku=?, color=?, color2=?, " +
-        "pattern=?, material=?, size_type=?, styles=?, family=?, updated_at=datetime('now') WHERE id=?"
+        "pattern=?, material=?, size_type=?, styles=?, family=?, price=?, updated_at=datetime('now') WHERE id=?"
       ).bind(item.name, item.category, item.image, item.sku, item.ukey,
              item.parent_sku, item.color, item.color2, item.pattern,
-             item.material, item.size_type, item.styles, item.family, ex.id).run();
+             item.material, item.size_type, item.styles, item.family, item.price, ex.id).run();
     }
     return { id: ex.id, action: changed ? 'updated' : 'unchanged', adopted };
   }
   try {
     const r = await env.DB.prepare(
       "INSERT INTO products (name, category, image, sku, ukey, parent_sku, color, color2, pattern, " +
-      "material, size_type, styles, family, updated_at) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))"
+      "material, size_type, styles, family, price, updated_at) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))"
     ).bind(item.name, item.category, item.image, item.sku, item.ukey,
            item.parent_sku, item.color, item.color2, item.pattern,
-           item.material, item.size_type, item.styles, item.family).run();
+           item.material, item.size_type, item.styles, item.family, item.price).run();
     return { id: r.meta && r.meta.last_row_id, action: 'created' };
   } catch (e) {
     // ① 极端情况：变体列还没补上（迁移失败）→ 退回只写基础列，保证写入不瘫
@@ -546,91 +553,324 @@ async function upsertProduct(env, item) {
   }
 }
 
-// /admin 管理登录页：纯静态外壳，交给下面 /api/admin/login 校验管理密钥。
-const ADMIN_PAGE = `<!DOCTYPE html>
-<html lang="zh-CN"><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex,nofollow">
-<title>管理登录 · LUNMONT</title>
-<style>
-*{box-sizing:border-box}
-body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
-  background:#f7f4ee;color:#0f0e0c;
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
-.card{width:min(420px,92vw);background:#fffdf9;border:1px solid #e2d9c8;padding:34px 30px;
-  box-shadow:0 18px 60px rgba(15,14,12,.10)}
-.brand{font-size:13px;letter-spacing:.42em;color:#0f0e0c;margin-bottom:6px}
-h1{font-size:19px;font-weight:500;letter-spacing:.06em;margin:0 0 4px}
-.sub{font-size:12px;color:#8a7a60;letter-spacing:.04em;margin-bottom:22px}
-label{display:block;font-size:11px;letter-spacing:.18em;color:#6b5a3e;margin:0 0 6px}
-input{width:100%;padding:11px 12px;border:1px solid #d9cdb6;background:#fff;font-size:14px;
-  font-family:inherit;letter-spacing:.06em;border-radius:0}
-input:focus{outline:none;border-color:#d9a441}
-button{width:100%;margin-top:18px;padding:12px;border:1px solid #d9a441;background:#d9a441;
-  color:#0f0e0c;font-size:13px;letter-spacing:.26em;cursor:pointer;font-family:inherit}
-button:disabled{opacity:.55;cursor:wait}
-.st{min-height:20px;margin-top:13px;font-size:12px;letter-spacing:.04em;color:#8a7a60}
-.st.err{color:#c0392b}.st.ok{color:#1e7a44}
-.back{display:inline-block;margin-top:18px;font-size:12px;color:#8a7a60;text-decoration:none;
-  letter-spacing:.06em;border-bottom:1px solid #d9cdb6;padding-bottom:2px}
-</style></head>
-<body>
-<form class="card" id="loginForm" autocomplete="off">
-  <div class="brand">LUNMONT</div>
-  <h1>管理员登录</h1>
-  <div class="sub">仅管理员可见 · 访客请返回首页</div>
-  <label for="key">管理密钥 / Admin key</label>
-  <input id="key" type="password" placeholder="请输入管理密钥" autocomplete="current-password" required>
-  <button type="submit" id="go">登 录</button>
-  <div class="st" id="st"></div>
-  <a class="back" href="/">← 返回首页</a>
-</form>
-<script>
-(function(){
-  var form = document.getElementById('loginForm');
-  var input = document.getElementById('key');
-  var go = document.getElementById('go');
-  var st = document.getElementById('st');
-  function say(m, cls){ st.textContent = m || ''; st.className = 'st' + (cls ? ' ' + cls : ''); }
-  form.addEventListener('submit', function(e){
-    e.preventDefault();
-    var k = (input.value || '').trim();
-    if(!k){ say('请输入管理密钥', 'err'); return; }
-    go.disabled = true; say('正在校验…');
-    fetch('/api/admin/login', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      credentials: 'same-origin',
-      body: JSON.stringify({key: k})
-    }).then(function(r){
-      return r.json().then(function(b){ return {status: r.status, body: b}; });
-    }).then(function(res){
-      if(res.status === 200 && res.body && res.body.ok){
-        // ⚠️ 密钥只放 sessionStorage：关标签页即失效，不落长期 cookie
-        sessionStorage.setItem('lunmont_admin_key', k);
-        say('登录成功，正在进入…', 'ok');
-        location.replace('/?admin=1');
-        return;
-      }
-      go.disabled = false;
-      say(res.status === 401 ? '管理密钥错误' : '登录失败，请稍后重试', 'err');
-      input.select();
-    }).catch(function(){
-      go.disabled = false;
-      say('网络异常，请重试', 'err');
-    });
-  });
-  input.focus();
-})();
-</script>
-</body></html>`;
+function json(body, status = 200, cookies = []) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (cookies && cookies.length) headers['Set-Cookie'] = cookies;
+  return new Response(JSON.stringify(body), { status, headers });
+}
 
-function json(body, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' }
-  });
+/* =====================================================================
+   商城后端：客户注册/登录 + 购物车下单 + 付款（PayPal 在线 / 万里汇 B2B 汇款）
+   =====================================================================
+   口径：
+   - 金额一律 USD，服务端用「分」(cents) 整数计算，绝不浮点累加。
+   - 商品价格来自 products.price（工作站发布同步），0 = 未定价（只能询价，不能下单）。
+   - 客户会话 = D1 表 cust_sessions + HttpOnly Cookie（lm_cust），密钥不进 cookie。
+   - 密码 PBKDF2-SHA256(WebCrypto) + 每用户随机盐；服务端不存明文，日志不打印。
+   - 下单时 items 用「产品行 id」从服务端重查价格并快照进 items_json —— 前端传的价格一律不信。
+   - PayPal：商户密钥只存 D1 settings；下单/请款都在服务端完成并核对金额，
+     前端 SDK 只负责弹收银台。未配置密钥时接口回 503，结账自动引导走「汇款」。
+   - 汇款（万里汇 B2B 信用卡收款账号）：无公开自助 API，走「客户下单→提交回执→
+     管理端核对到账→标记已收款」的人工确认闭环，收款账号在管理端配置。
+   - 邮件通知：可选 Cloudflare Email 发信绑定（env.SEND_EMAIL）。没配置就跳过，
+     绝不阻塞下单。
+*/
+
+const CUSTOMERS_SCHEMA = `CREATE TABLE IF NOT EXISTS customers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL UNIQUE,
+  pass_hash TEXT NOT NULL DEFAULT '',
+  pass_salt TEXT NOT NULL DEFAULT '',
+  name TEXT NOT NULL DEFAULT '',
+  company TEXT NOT NULL DEFAULT '',
+  country TEXT NOT NULL DEFAULT '',
+  phone TEXT NOT NULL DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now'))
+)`;
+
+const SESSIONS_SCHEMA = `CREATE TABLE IF NOT EXISTS cust_sessions (
+  token TEXT PRIMARY KEY,
+  customer_id INTEGER NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+)`;
+
+const ORDERS_SCHEMA = `CREATE TABLE IF NOT EXISTS orders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  num TEXT NOT NULL UNIQUE,
+  customer_id INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending_payment',
+  pay_method TEXT NOT NULL DEFAULT '',
+  currency TEXT NOT NULL DEFAULT 'USD',
+  subtotal_cents INTEGER NOT NULL DEFAULT 0,
+  shipping_cents INTEGER NOT NULL DEFAULT 0,
+  total_cents INTEGER NOT NULL DEFAULT 0,
+  items_json TEXT NOT NULL DEFAULT '[]',
+  ship_name TEXT NOT NULL DEFAULT '',
+  ship_phone TEXT NOT NULL DEFAULT '',
+  ship_country TEXT NOT NULL DEFAULT '',
+  ship_address TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  receipt TEXT NOT NULL DEFAULT '',
+  pay_ref TEXT NOT NULL DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+)`;
+
+// 订单状态机：管理端可推进；客户端只能撤销未付款单。
+const ORDER_STATUSES = ['pending_payment', 'awaiting_confirmation', 'paid',
+                        'processing', 'shipped', 'delivered', 'cancelled', 'refunded'];
+const CUST_COOKIE = 'lm_cust';
+const SESSION_DAYS = 30;
+let shopReady = false;
+async function ensureShop(env) {
+  if (shopReady) return;
+  await env.DB.batch([
+    env.DB.prepare(CUSTOMERS_SCHEMA),
+    env.DB.prepare(SESSIONS_SCHEMA),
+    env.DB.prepare(ORDERS_SCHEMA)
+  ]);
+  shopReady = true;
+}
+
+function hexOf(buf) {
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+function saltHex() { return hexOf(crypto.getRandomValues(new Uint8Array(16))); }
+function randToken() { return hexOf(crypto.getRandomValues(new Uint8Array(32))); }
+
+async function hashPassword(password, salt) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+  const saltBytes = Uint8Array.from(salt.match(/.{2}/g).map(h => parseInt(h, 16)));
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: saltBytes, iterations: 120000, hash: 'SHA-256' }, key, 256);
+  return hexOf(bits);
+}
+
+// 恒定时间比较：不把「前缀相同」的时序信息漏给计时侧信道
+function constEqual(a, b) {
+  const s1 = String(a || ''), s2 = String(b || '');
+  if (s1.length !== s2.length) return false;
+  let diff = 0;
+  for (let i = 0; i < s1.length; i++) diff |= s1.charCodeAt(i) ^ s2.charCodeAt(i);
+  return diff === 0;
+}
+
+function cleanEmail(v) {
+  const s = String(v || '').trim().toLowerCase().slice(0, 160);
+  return /^[^\s@,;]{1,80}@[^\s@,;.][^\s@,;]{0,80}\.[a-z]{2,10}$/i.test(s) ? s : '';
+}
+
+function parseCookies(request) {
+  const raw = request.headers.get('Cookie') || '';
+  const out = {};
+  for (const part of raw.split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return out;
+}
+
+function sessionCookie(token, maxAgeDays) {
+  const secure = 'Secure; ';
+  return CUST_COOKIE + '=' + encodeURIComponent(token) +
+    '; Path=/; HttpOnly; ' + secure + 'SameSite=Lax; Max-Age=' + (maxAgeDays * 86400);
+}
+
+// 读会话 -> 客户行。过期即删。返回 null = 未登录。
+async function currentCustomer(env, request) {
+  const token = parseCookies(request)[CUST_COOKIE] || '';
+  if (!/^[0-9a-f]{64}$/.test(token)) return null;
+  try {
+    const row = await env.DB.prepare(
+      'SELECT s.token, s.expires_at, c.id, c.email, c.name, c.company, c.country, c.phone ' +
+      'FROM cust_sessions s JOIN customers c ON c.id = s.customer_id WHERE s.token=?'
+    ).bind(token).first();
+    if (!row) return null;
+    const exp = Date.parse(String(row.expires_at).replace(' ', 'T') + 'Z');
+    if (!isFinite(exp) || exp < Date.now()) {
+      await env.DB.prepare('DELETE FROM cust_sessions WHERE token=?').bind(token).run();
+      return null;
+    }
+    return row;
+  } catch (e) { return null; }
+}
+
+async function createSession(env, customerId) {
+  const token = randToken();
+  await env.DB.prepare(
+    "INSERT INTO cust_sessions (token, customer_id, expires_at) VALUES (?, ?, datetime('now','+" + SESSION_DAYS + " day'))"
+  ).bind(token, customerId).run();
+  // 顺带清过期会话（写入路径低频，够用；不必定时任务）
+  try { await env.DB.prepare("DELETE FROM cust_sessions WHERE expires_at < datetime('now')").run(); } catch (e) {}
+  return token;
+}
+
+async function readSetting(env, key) {
+  try {
+    const r = await env.DB.prepare('SELECT value FROM settings WHERE key=?').bind(key).first();
+    return (r && r.value) || '';
+  } catch (e) { return ''; }
+}
+
+// 邮件：Cloudflare Email Sending 绑定（env.SEND_EMAIL，dashboard 配发信地址）。
+// 未配置/失败都只记状态，绝不抛错打断订单流程。
+async function sendMailSafe(env, to, subject, html) {
+  if (!env.SEND_EMAIL || typeof EmailMessage === 'undefined' || !cleanEmail(to))
+    return 'skipped';
+  try {
+    const from = await readSetting(env, 'shop_from_email');
+    if (!from) return 'skipped';
+    await env.SEND_EMAIL.send(new EmailMessage(from, to, subject,
+      { headers: { 'Content-Type': 'text/html; charset=utf-8' } }, html || ''));
+    return 'sent';
+  } catch (e) { return 'failed'; }
+}
+
+function money(cents) { return (Number(cents || 0) / 100).toFixed(2); }
+
+function orderRow(o) {
+  let items = [];
+  try { items = JSON.parse(o.items_json) || []; } catch (e) {}
+  return {
+    id: o.id, num: o.num, status: o.status, pay_method: o.pay_method || '',
+    currency: o.currency || 'USD',
+    subtotal: money(o.subtotal_cents), total: money(o.total_cents),
+    items, ship_name: o.ship_name, ship_phone: o.ship_phone,
+    ship_country: o.ship_country, ship_address: o.ship_address,
+    note: o.note || '', receipt: o.receipt || '',
+    created_at: o.created_at, updated_at: o.updated_at
+  };
+}
+
+// PayPal REST（sandbox / live 由 settings.paypal_env 决定）
+async function paypalBase(env) {
+  const mode = await readSetting(env, 'paypal_env');
+  return mode === 'live' ? 'https://api-m.paypal.com' : 'https://sandbox.api.paypal.com';
+}
+async function paypalAccessToken(env) {
+  const cid = await readSetting(env, 'paypal_client_id');
+  const sec = await readSetting(env, 'paypal_secret');
+  if (!cid || !sec) return null;
+  try {
+    const resp = await fetch((await paypalBase(env)) + '/v1/oauth2/token', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Basic ' + btoa(cid + ':' + sec),
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: 'grant_type=client_credentials'
+    });
+    if (!resp.ok) return null;
+    const j = await resp.json();
+    return j && j.access_token ? j.access_token : null;
+  } catch (e) { return null; }
+}
+
+// 下单核心：客户端下单与购物车结账共用。返回 {error,status} 或订单行。
+async function createOrder(env, customerId, body) {
+  const rawItems = Array.isArray(body && body.items) ? body.items.slice(0, 50) : [];
+  const want = [];
+  for (const it of rawItems) {
+    const id = Number(it && it.id), qty = Number(it && it.qty);
+    if (!Number.isInteger(id) || id <= 0) return { error: 'bad item id', status: 400 };
+    if (!Number.isInteger(qty) || qty <= 0 || qty > 999999) return { error: 'bad quantity', status: 400 };
+    want.push({ id, qty });
+  }
+  if (!want.length) return { error: 'cart empty', status: 400 };
+  const payMethod = String((body && body.pay_method) || '');
+  if (['', 'paypal', 'wire'].indexOf(payMethod) < 0) return { error: 'bad pay_method', status: 400 };
+  const shipName = String((body && body.ship_name) || '').trim().slice(0, 120);
+  const shipPhone = String((body && body.ship_phone) || '').trim().slice(0, 60);
+  const shipCountry = String((body && body.ship_country) || '').trim().slice(0, 60);
+  const shipAddress = String((body && body.ship_address) || '').trim().slice(0, 500);
+  const note = String((body && body.note) || '').trim().slice(0, 2000);
+  if (!shipName || !shipAddress) return { error: 'shipping name/address required', status: 400 };
+
+  // 服务端重查价格（前端传的价格一概不信）；未定价=不可售
+  const ids = [...new Set(want.map(w => w.id))];
+  const sql = 'SELECT id, name, sku, image, price FROM products WHERE id IN (' +
+    ids.map(() => '?').join(',') + ')';
+  const found = await env.DB.prepare(sql).bind(...ids).all();
+  const byId = new Map((found.results || []).map(p => [p.id, p]));
+  let subtotal = 0;
+  const snapshot = [];
+  for (const w of want) {
+    const p = byId.get(w.id);
+    if (!p) return { error: 'product not found: ' + w.id, status: 404 };
+    const cents = Math.round(Number(p.price || 0) * 100);
+    if (cents <= 0) return { error: 'product not priced: ' + (p.sku || p.id), status: 400 };
+    subtotal += cents * w.qty;
+    snapshot.push({ id: p.id, sku: p.sku || '', name: p.name || '', image: p.image || '',
+                    price_cents: cents, qty: w.qty });
+  }
+  if (subtotal > 500000000) return { error: 'order too large', status: 400 };
+
+  // 订单号：LM + 日期 + 4 位随机（撞了重摇，最多试 5 次）
+  let num = '';
+  for (let i = 0; i < 5 && !num; i++) {
+    const d = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const cand = 'LM' + d + '-' + randToken().slice(0, 4).toUpperCase();
+    const dup = await env.DB.prepare('SELECT id FROM orders WHERE num=?').bind(cand).first();
+    if (!dup) num = cand;
+  }
+  if (!num) return { error: 'order number collision, retry', status: 500 };
+
+  await env.DB.prepare(
+    "INSERT INTO orders (num, customer_id, status, pay_method, subtotal_cents, total_cents, " +
+    "items_json, ship_name, ship_phone, ship_country, ship_address, note) " +
+    "VALUES (?, ?, 'pending_payment', ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  ).bind(num, customerId, payMethod, subtotal, subtotal,
+         JSON.stringify(snapshot), shipName, shipPhone, shipCountry, shipAddress, note).run();
+  const row = await env.DB.prepare('SELECT * FROM orders WHERE num=?').bind(num).first();
+  return { order: row };
+}
+
+async function notifyOrder(env, order, customerEmail, isNew) {
+  const rows = await env.DB.prepare('SELECT email, name, company FROM customers WHERE id=?')
+    .bind(order.customer_id).first();
+  const cEmail = rows && rows.email;
+  const summary = orderRow(order);
+  const lines = summary.items.map(it =>
+    '<tr><td>' + escHtml(it.sku || String(it.id)) + '</td><td>' + escHtml(it.name) +
+    '</td><td>' + it.qty + '</td><td>$' + money(it.price_cents) + '</td></tr>').join('');
+  const html = '<div style="font-family:sans-serif;max-width:560px">' +
+    '<h2>LUNMONT ' + (isNew ? '订单确认 Order Confirmed' : '订单更新 Order Update') + '</h2>' +
+    '<p>订单号 / Order No.: <b>' + escHtml(summary.num) + '</b></p>' +
+    '<p>状态 / Status: <b>' + escHtml(summary.status) + '</b></p>' +
+    '<table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;font-size:13px">' +
+    '<tr><td>SKU</td><td>Product</td><td>Qty</td><td>Unit</td></tr>' + lines + '</table>' +
+    '<p><b>Total: $' + summary.total + ' ' + escHtml(summary.currency) + '</b>（运费另议）</p>' +
+    '<p>收货：' + escHtml(summary.ship_name) + ' ' + escHtml(summary.ship_phone) +
+    '<br>' + escHtml(summary.ship_address) + ' ' + escHtml(summary.ship_country) + '</p>' +
+    '</div>';
+  const adminEmail = await readSetting(env, 'shop_notify_email');
+  const r1 = cEmail ? await sendMailSafe(env, cEmail, 'LUNMONT order ' + summary.num, html) : 'none';
+  const r2 = adminEmail ? await sendMailSafe(env, adminEmail, '[新订单] ' + summary.num + ' $' + summary.total, html) : 'none';
+  return { customer: r1, admin: r2 };
+}
+function escHtml(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// 登录暴力尝试限速（本 isolate 计数，尽力而为）
+const loginFails = new Map(); // key: ip|email -> {n, until}
+function loginThrottle(ip, email) {
+  const k = String(ip || '') + '|' + String(email || '');
+  const rec = loginFails.get(k);
+  const now = Date.now();
+  if (rec && rec.until > now && rec.n >= 12) return true;
+  if (rec && rec.until <= now) loginFails.delete(k);
+  return false;
+}
+function loginFailRecord(ip, email) {
+  const k = String(ip || '') + '|' + String(email || '');
+  const rec = loginFails.get(k);
+  const now = Date.now();
+  if (!rec || rec.until <= now) loginFails.set(k, { n: 1, until: now + 15 * 60 * 1000 });
+  else { rec.n++; rec.until = now + 15 * 60 * 1000; }
+  if (loginFails.size > 5000) loginFails.clear();
 }
 
 async function checkAdmin(env, request) {
@@ -780,19 +1020,10 @@ export default {
     }
     const route = path.slice(4); // after /api
 
-    // —— 管理登录页 + 登录校验（公开，登录本身就是换取校验结果）——
-    // /admin 走 Worker 而不是静态资源：可直接 302 到登录页，且不占 assets 路径。
-    if ((path === '/admin' || path === '/admin/') && method === 'GET') {
-      return new Response(ADMIN_PAGE, {
-        status: 200,
-        headers: {
-          'Content-Type': 'text/html; charset=utf-8',
-          // 登录页永不缓存，避免 CF 边缘把旧外壳发给下一位访客
-          'Cache-Control': 'no-store',
-          'X-Robots-Tag': 'noindex, nofollow'
-        }
-      });
-    }
+    // —— 管理登录校验（公开：登录本身就是换取校验结果）——
+    // ⚠️ 登录页本体是静态文件 site/admin.html：CF 的 assets 层在 Worker 之前处理
+    // 无扩展名路径重写（/privacy.html -> /privacy），Worker 里返回 HTML 的裸路径会被
+    // assets 先回 404，所以页面只能走静态文件，Worker 只保留这个 JSON 接口。
     if (route === '/admin/login' && method === 'POST') {
       let body;
       try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
@@ -821,12 +1052,12 @@ export default {
       try {
         const r = await env.DB.prepare(
           'SELECT id, name, category, image, sku, parent_sku, color, color2, pattern, ' +
-          'material, size_type, styles, family ' +
+          'material, size_type, styles, family, price ' +
           'FROM products ORDER BY id DESC LIMIT 500'
         ).all();
         rows = r.results || [];
       } catch (e) {
-        // 分类列未补齐时单独降级：先退回只有变体列的查询，保住变体功能
+        // price/taxonomy 列未补齐时单独降级：退回只有变体列的查询（price=0 前端显示询价）
         hasTaxonomy = false;
         try {
           const r = await env.DB.prepare(
@@ -868,7 +1099,7 @@ export default {
                      category: p.category, image: p.image, sku: p.sku, variants: [],
                      material: p.material || '', size: p.size_type || '',
                      styles: p.styles ? String(p.styles).split(',').filter(Boolean) : [],
-                     family: p.family || '' };
+                     family: p.family || '', price: Number(p.price || 0) };
             byKey.set(key, card);
           }
           // 卡级属性散落在各行时，哪行有值就用哪行（分类只写在其中一行也不会丢）
@@ -880,8 +1111,11 @@ export default {
           card.variants.push({
             id: p.id, sku: p.sku, image: p.image, name: p.name,
             color: p.color || '', color2: p.color2 || p.color || '',
-            pattern: Number(p.pattern || 0) === 1
+            pattern: Number(p.pattern || 0) === 1, price: Number(p.price || 0)
           });
+          // 卡价 = 各花色里的最低有效价（未定价 0 不参与比较）；全 0 时保持 0=询价
+          const pv = Number(p.price || 0);
+          if (pv > 0 && (!card.price || pv < card.price)) card.price = pv;
         }
         // 花色名从名称末尾提取（「… 粉红色5.9cm」-> 粉红色5.9cm），前端直接显示
         for (const card of byKey.values()) {
@@ -1034,6 +1268,358 @@ export default {
       } catch (e) {
         return json({ inquiries: [], detail: String(e && e.message || e).slice(0, 120) });
       }
+    }
+
+    /* ============================ 商城（客户侧，会话鉴权，不走 X-Admin-Key） ============================ */
+    if (route.indexOf('/shop/') === 0 || route === '/shop') {
+      try { await ensureShop(env); } catch (e) {
+        return json({ error: 'shop tables unavailable', detail: String(e && e.message || e).slice(0, 120) }, 500);
+      }
+      const cust = await currentCustomer(env, request);
+
+      // 注册：邮箱唯一；已注册直接 409（不泄露「该邮箱有没有号」之外的信息）
+      if (route === '/shop/register' && method === 'POST') {
+        let body; try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+        const email = cleanEmail(body && body.email);
+        const pass = String((body && body.password) || '');
+        const name = String((body && body.name) || '').trim().slice(0, 120);
+        if (!email) return json({ error: 'valid email required' }, 400);
+        if (pass.length < 8 || pass.length > 200) return json({ error: 'password 8-200 chars' }, 400);
+        if (!name) return json({ error: 'name required' }, 400);
+        const exist = await env.DB.prepare('SELECT id FROM customers WHERE email=?').bind(email).first();
+        if (exist) return json({ error: 'email already registered' }, 409);
+        const salt = saltHex();
+        const hash = await hashPassword(pass, salt);
+        const company = String((body && body.company) || '').trim().slice(0, 160);
+        const country = String((body && body.country) || '').trim().slice(0, 60);
+        const phone = String((body && body.phone) || '').trim().slice(0, 60);
+        const ins = await env.DB.prepare(
+          'INSERT INTO customers (email, pass_hash, pass_salt, name, company, country, phone) ' +
+          'VALUES (?, ?, ?, ?, ?, ?, ?)'
+        ).bind(email, hash, salt, name, company, country, phone).run();
+        const cid = ins.meta && ins.meta.last_row_id;
+        const token = cid ? await createSession(env, cid) : '';
+        return json({ ok: true, customer: { id: cid, email, name, company, country, phone } },
+                    201, token ? [sessionCookie(token, SESSION_DAYS)] : []);
+      }
+
+      // 登录：限速 + 恒定时间比较；成功轮换会话
+      if (route === '/shop/login' && method === 'POST') {
+        let body; try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+        const email = cleanEmail(body && body.email);
+        const pass = String((body && body.password) || '').slice(0, 200);
+        const ip = (request.headers.get('CF-Connecting-IP') || '').slice(0, 64);
+        if (!email || !pass) return json({ error: 'email and password required' }, 400);
+        if (loginThrottle(ip, email)) return json({ error: 'too many attempts, wait 15 min' }, 429);
+        const row = await env.DB.prepare(
+          'SELECT id, email, name, company, country, phone, pass_hash, pass_salt FROM customers WHERE email=?'
+        ).bind(email).first();
+        if (!row) { loginFailRecord(ip, email); return json({ error: 'invalid credentials' }, 401); }
+        const hash = await hashPassword(pass, row.pass_salt || '');
+        if (!constEqual(hash, row.pass_hash)) { loginFailRecord(ip, email); return json({ error: 'invalid credentials' }, 401); }
+        loginFails.delete(ip + '|' + email);
+        const token = await createSession(env, row.id);
+        return json({ ok: true, customer: { id: row.id, email: row.email, name: row.name,
+                       company: row.company, country: row.country, phone: row.phone } },
+                    200, [sessionCookie(token, SESSION_DAYS)]);
+      }
+
+      if (route === '/shop/logout' && method === 'POST') {
+        const token = parseCookies(request)[CUST_COOKIE] || '';
+        if (/^[0-9a-f]{64}$/.test(token)) {
+          try { await env.DB.prepare('DELETE FROM cust_sessions WHERE token=?').bind(token).run(); } catch (e) {}
+        }
+        return json({ ok: true }, 200, [sessionCookie('', 0)]);
+      }
+
+      // 当前客户（前端启动时探测登录态）；未登录 200 + null，不 401（避免噪音）
+      if (route === '/shop/me' && method === 'GET') {
+        if (!cust) return json({ customer: null });
+        return json({ customer: { id: cust.id, email: cust.email, name: cust.name,
+                       company: cust.company, country: cust.country, phone: cust.phone } });
+      }
+
+      // 收款方式配置（公开只读：结账页要展示万里汇汇款账号 + PayPal 是否可用）。
+      // 只回展示字段，绝不回 paypal_secret/client_id。
+      if (route === '/shop/payment-config' && method === 'GET') {
+        const wire = { enabled: false };
+        try {
+          const raw = await readSetting(env, 'shop_wire_config');
+          if (raw) {
+            const w = JSON.parse(raw);
+            wire.enabled = !!w.enabled;
+            wire.account_name = String(w.account_name || '').slice(0, 160);
+            wire.bank_name = String(w.bank_name || '').slice(0, 160);
+            wire.account_no = String(w.account_no || '').slice(0, 80);
+            wire.note = String(w.note || '').slice(0, 1000);
+          }
+        } catch (e) {}
+        let paypal = false, ppCid = '';
+        try {
+          ppCid = await readSetting(env, 'paypal_client_id');
+          paypal = !!(ppCid && await readSetting(env, 'paypal_secret'));
+        } catch (e) {}
+        // client-id 可公开（PayPal SDK 本来就写在页面 URL 上）；secret 绝不外传
+        return json({ wire, paypalEnabled: paypal, paypalClientId: paypal ? ppCid : '',
+                      currency: 'USD' });
+      }
+
+      // 下单（需登录）。pay_method 只记录意向，paypal 真实扣款走 capture。
+      if (route === '/shop/orders' && method === 'POST') {
+        if (!cust) return json({ error: 'login required' }, 401);
+        let body; try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+        const res = await createOrder(env, cust.id, body);
+        if (res.error) return json({ error: res.error }, res.status || 400);
+        const order = res.order;
+        const mail = await notifyOrder(env, order, cust.email, true);
+        return json({ ok: true, order: orderRow(order), mail });
+      }
+
+      // 我的订单列表（只回自己的）
+      if (route === '/shop/orders' && method === 'GET') {
+        if (!cust) return json({ error: 'login required' }, 401);
+        const r = await env.DB.prepare(
+          'SELECT * FROM orders WHERE customer_id=? ORDER BY id DESC LIMIT 100'
+        ).bind(cust.id).all();
+        return json({ orders: (r.results || []).map(orderRow) });
+      }
+
+      // 本人撤单：只有没付钱的单能撤
+      if (route === '/shop/orders/cancel' && method === 'POST') {
+        if (!cust) return json({ error: 'login required' }, 401);
+        let body; try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+        const num = String((body && body.num) || '').slice(0, 40);
+        const o = await env.DB.prepare('SELECT * FROM orders WHERE num=?').bind(num).first();
+        if (!o || o.customer_id !== cust.id) return json({ error: 'not found' }, 404);
+        if (['pending_payment', 'awaiting_confirmation'].indexOf(o.status) < 0)
+          return json({ error: 'cannot cancel a ' + o.status + ' order' }, 409);
+        await env.DB.prepare("UPDATE orders SET status='cancelled', updated_at=datetime('now') WHERE num=?")
+          .bind(num).run();
+        return json({ ok: true });
+      }
+
+      // 汇款回执：客户提交流水号/截图说明 → 状态转「待确认到账」
+      if (route === '/shop/orders/receipt' && method === 'POST') {
+        if (!cust) return json({ error: 'login required' }, 401);
+        let body; try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+        const num = String((body && body.num) || '').slice(0, 40);
+        const receipt = String((body && body.receipt) || '').trim().slice(0, 500);
+        if (!receipt) return json({ error: 'receipt required' }, 400);
+        const o = await env.DB.prepare('SELECT * FROM orders WHERE num=?').bind(num).first();
+        if (!o || o.customer_id !== cust.id) return json({ error: 'not found' }, 404);
+        if (o.status !== 'pending_payment') return json({ error: 'order is ' + o.status }, 409);
+        await env.DB.prepare(
+          "UPDATE orders SET status='awaiting_confirmation', receipt=?, updated_at=datetime('now') WHERE num=?"
+        ).bind(receipt, num).run();
+        const adminEmail = await readSetting(env, 'shop_notify_email');
+        if (adminEmail) await sendMailSafe(env, adminEmail, '[汇款回执] ' + num, escHtml(receipt));
+        return json({ ok: true });
+      }
+
+      /* PayPal：服务端创单+请款。client 只拿到 checkout URL / 订单号，密钥永不出服务端。 */
+      if (route === '/shop/paypal/create' && method === 'POST') {
+        if (!cust) return json({ error: 'login required' }, 401);
+        let body; try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+        const num = String((body && body.num) || '').slice(0, 40);
+        const o = await env.DB.prepare('SELECT * FROM orders WHERE num=?').bind(num).first();
+        if (!o || o.customer_id !== cust.id) return json({ error: 'not found' }, 404);
+        if (o.status !== 'pending_payment') return json({ error: 'order is ' + o.status }, 409);
+        const token = await paypalAccessToken(env);
+        if (!token) return json({ error: 'paypal not configured' }, 503);
+        const origin = new URL(request.url).origin;
+        const resp = await fetch((await paypalBase(env)) + '/v2/checkout/orders', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            intent: 'CAPTURE',
+            purchase_units: [{ reference_id: o.num,
+              amount: { currency_code: 'USD', value: money(o.total_cents) } }],
+            application_context: {
+              brand_name: 'LUNMONT', user_action: 'PAY_NOW',
+              return_url: origin + '/?pp=capture&num=' + encodeURIComponent(o.num),
+              cancel_url: origin + '/?pp=cancel'
+            }
+          })
+        });
+        const j = await resp.json().catch(() => ({}));
+        if (!resp.ok) return json({ error: 'paypal create failed', detail: JSON.stringify(j).slice(0, 300) }, 502);
+        const appr = (j.links || []).find(l => l.rel === 'payer-action' || l.rel === 'approve');
+        // 有托管收银台（paypal_orders 列）则记录 pp_order_id
+        try { await env.DB.prepare('SELECT paypal_order_id FROM orders LIMIT 1').first();
+          await env.DB.prepare("UPDATE orders SET paypal_order_id=?, updated_at=datetime('now') WHERE num=?")
+            .bind(j.id, o.num).run();
+        } catch (e) {
+          // 老库没这列：补列（一次性，ALTER 常量默认值合法）
+          try { await env.DB.prepare('ALTER TABLE orders ADD COLUMN paypal_order_id TEXT DEFAULT ""').run();
+            await env.DB.prepare('UPDATE orders SET paypal_order_id=? WHERE num=?').bind(j.id, o.num).run();
+          } catch (e2) {}
+        }
+        return json({ ok: true, paypalOrderId: j.id, approveUrl: appr ? appr.href : '' });
+      }
+
+      if (route === '/shop/paypal/capture' && method === 'POST') {
+        if (!cust) return json({ error: 'login required' }, 401);
+        let body; try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+        const num = String((body && body.num) || '').slice(0, 40);
+        const o = await env.DB.prepare('SELECT * FROM orders WHERE num=?').bind(num).first();
+        if (!o || o.customer_id !== cust.id) return json({ error: 'not found' }, 404);
+        if (o.status === 'paid') return json({ ok: true, order: orderRow(o) }); // 幂等
+        if (o.status !== 'pending_payment') return json({ error: 'order is ' + o.status }, 409);
+        const token = await paypalAccessToken(env);
+        if (!token) return json({ error: 'paypal not configured' }, 503);
+        let ppId = String((body && body.paypalOrderId) || '').slice(0, 64);
+        if (!ppId) { try { ppId = String(o.paypal_order_id || ''); } catch (e) {} }
+        if (!ppId) return json({ error: 'paypalOrderId required' }, 400);
+        const resp = await fetch((await paypalBase(env)) + '/v2/checkout/orders/' +
+          encodeURIComponent(ppId) + '/capture', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }
+        });
+        const j = await resp.json().catch(() => ({}));
+        const cap = j && j.status_code === 'COMPLETED' || (j && j.status === 'COMPLETED');
+        if (!resp.ok || !cap) {
+          return json({ error: 'capture not completed', detail: JSON.stringify(j).slice(0, 300) }, 502);
+        }
+        // 金额核对：PayPal 回的 capture 金额必须等于订单金额（防改单）
+        const amt = (((j.purchase_units || [])[0] || {}).payments || {})
+          .captures || [];
+        const got = Number((amt[0] || {}).amount && amt[0].amount.value);
+        if (!(got > 0) || Math.abs(got * 100 - Number(o.total_cents)) > 1) {
+          await env.DB.prepare("UPDATE orders SET status='awaiting_confirmation', pay_ref=?, updated_at=datetime('now') WHERE num=?")
+            .bind(ppId, num).run();
+          return json({ error: 'amount mismatch — held for manual check', detail: got + ' vs ' + money(o.total_cents) }, 409);
+        }
+        await env.DB.prepare(
+          "UPDATE orders SET status='paid', pay_method='paypal', pay_ref=?, updated_at=datetime('now') WHERE num=?"
+        ).bind(ppId, num).run();
+        const fresh = await env.DB.prepare('SELECT * FROM orders WHERE num=?').bind(num).first();
+        await notifyOrder(env, fresh, cust.email, false);
+        return json({ ok: true, order: orderRow(fresh) });
+      }
+
+      return json({ error: 'not found' }, 404);
+    }
+
+    /* ============================ 商城（管理侧，X-Admin-Key 门禁） ============================ */
+    if (route.indexOf('/shop-admin/') === 0) {
+      if (!(await checkAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
+      try { await ensureShop(env); } catch (e) {
+        return json({ error: 'shop tables unavailable', detail: String(e && e.message || e).slice(0, 120) }, 500);
+      }
+
+      // 汇款收款账号配置（万里汇 B2B 账号信息，仅展示用）
+      if (route === '/shop-admin/wire-config' && method === 'POST') {
+        let body; try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+        const w = {
+          enabled: !!(body && body.enabled),
+          account_name: String((body && body.account_name) || '').trim().slice(0, 160),
+          bank_name: String((body && body.bank_name) || '').trim().slice(0, 160),
+          account_no: String((body && body.account_no) || '').trim().slice(0, 80),
+          note: String((body && body.note) || '').trim().slice(0, 1000)
+        };
+        await env.DB.prepare(
+          "INSERT INTO settings (key, value) VALUES ('shop_wire_config', ?) " +
+          "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+        ).bind(JSON.stringify(w)).run();
+        return json({ ok: true });
+      }
+
+      // PayPal / 通知邮箱配置
+      if (route === '/shop-admin/settings' && method === 'POST') {
+        let body; try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+        const stmts = [];
+        const set = (k, v) => stmts.push(env.DB.prepare(
+          "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+        ).bind(k, String(v || '').trim().slice(0, 300)));
+        if (body && Object.prototype.hasOwnProperty.call(body, 'paypal_client_id')) set('paypal_client_id', body.paypal_client_id);
+        if (body && Object.prototype.hasOwnProperty.call(body, 'paypal_secret')) set('paypal_secret', body.paypal_secret);
+        if (body && Object.prototype.hasOwnProperty.call(body, 'paypal_env')) {
+          set('paypal_env', body.paypal_env === 'live' ? 'live' : 'sandbox');
+        }
+        if (body && Object.prototype.hasOwnProperty.call(body, 'shop_notify_email')) set('shop_notify_email', body.shop_notify_email);
+        if (body && Object.prototype.hasOwnProperty.call(body, 'shop_from_email')) set('shop_from_email', body.shop_from_email);
+        if (stmts.length) await env.DB.batch(stmts);
+        // 只回布尔状态，绝不把密钥回传前端
+        const has = async k => !!(await readSetting(env, k));
+        return json({ ok: true, paypal_client_id: await has('paypal_client_id'),
+                      paypal_secret: await has('paypal_secret'),
+                      paypal_env: (await readSetting(env, 'paypal_env')) === 'live' ? 'live' : 'sandbox',
+                      shop_notify_email: await has('shop_notify_email'),
+                      shop_from_email: await has('shop_from_email') });
+      }
+      if (route === '/shop-admin/settings' && method === 'GET') {
+        const has = async k => !!(await readSetting(env, k));
+        return json({ paypal_client_id: await has('paypal_client_id'),
+                      paypal_secret: await has('paypal_secret'),
+                      paypal_env: (await readSetting(env, 'paypal_env')) === 'live' ? 'live' : 'sandbox',
+                      shop_notify_email: await has('shop_notify_email'),
+                      shop_from_email: await has('shop_from_email') });
+      }
+
+      // 订单列表（管理视角，带客户信息；status / q 过滤）
+      if (route === '/shop-admin/orders' && method === 'GET') {
+        const status = String((url.searchParams.get('status') || '')).slice(0, 30);
+        const q = String((url.searchParams.get('q') || '')).trim().slice(0, 80);
+        let sql = 'SELECT o.*, c.email AS cust_email, c.name AS cust_name, c.company AS cust_company ' +
+                  'FROM orders o LEFT JOIN customers c ON c.id = o.customer_id WHERE 1=1';
+        const binds = [];
+        if (status && ORDER_STATUSES.indexOf(status) >= 0) { sql += ' AND o.status=?'; binds.push(status); }
+        if (q) { sql += ' AND (o.num LIKE ? OR c.email LIKE ? OR c.name LIKE ?)'; binds.push('%' + q + '%', '%' + q + '%', '%' + q + '%'); }
+        sql += ' ORDER BY o.id DESC LIMIT 200';
+        const r = await env.DB.prepare(sql).bind(...binds).all();
+        const out = (r.results || []).map(o => Object.assign(orderRow(o), {
+          customer: { id: o.customer_id, email: o.cust_email || '', name: o.cust_name || '', company: o.cust_company || '' }
+        }));
+        return json({ orders: out });
+      }
+
+      // 推进订单状态（paid 必须由管理端确认到账后手动标记）
+      if (route === '/shop-admin/orders/status' && method === 'POST') {
+        let body; try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+        const num = String((body && body.num) || '').slice(0, 40);
+        const status = String((body && body.status) || '');
+        if (ORDER_STATUSES.indexOf(status) < 0) return json({ error: 'bad status' }, 400);
+        const o = await env.DB.prepare('SELECT * FROM orders WHERE num=?').bind(num).first();
+        if (!o) return json({ error: 'not found' }, 404);
+        if (o.status === status) return json({ ok: true, unchanged: true });
+        if (o.status === 'cancelled' || o.status === 'refunded')
+          return json({ error: 'terminal order cannot be moved to ' + status }, 409);
+        await env.DB.prepare("UPDATE orders SET status=?, updated_at=datetime('now') WHERE num=?")
+          .bind(status, num).run();
+        const fresh = await env.DB.prepare('SELECT * FROM orders WHERE num=?').bind(num).first();
+        if (['paid', 'shipped', 'cancelled', 'refunded'].indexOf(status) >= 0) await notifyOrder(env, fresh, '', false);
+        return json({ ok: true, order: orderRow(fresh) });
+      }
+
+      // 汇款单标记已收款（人工核对到账后一键 paid）
+      if (route === '/shop-admin/orders/confirm-paid' && method === 'POST') {
+        let body; try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+        const num = String((body && body.num) || '').slice(0, 40);
+        const payRef = String((body && body.pay_ref) || '').trim().slice(0, 200);
+        const o = await env.DB.prepare('SELECT * FROM orders WHERE num=?').bind(num).first();
+        if (!o) return json({ error: 'not found' }, 404);
+        if (['paid', 'shipped', 'delivered'].indexOf(o.status) >= 0) return json({ ok: true, unchanged: true });
+        await env.DB.prepare(
+          "UPDATE orders SET status='paid', pay_method=CASE WHEN pay_method='' THEN 'wire' ELSE pay_method END, " +
+          "pay_ref=?, updated_at=datetime('now') WHERE num=?").bind(payRef, num).run();
+        const fresh = await env.DB.prepare('SELECT * FROM orders WHERE num=?').bind(num).first();
+        await notifyOrder(env, fresh, '', false);
+        return json({ ok: true, order: orderRow(fresh) });
+      }
+
+      // 客户列表（注册时长、订单数、累计金额）
+      if (route === '/shop-admin/customers' && method === 'GET') {
+        const r = await env.DB.prepare(
+          'SELECT c.id, c.email, c.name, c.company, c.country, c.phone, c.created_at, ' +
+          'COUNT(o.id) AS order_count, COALESCE(SUM(CASE WHEN o.status IN ' +
+          "('paid','processing','shipped','delivered') THEN o.total_cents ELSE 0 END),0) AS paid_cents " +
+          'FROM customers c LEFT JOIN orders o ON o.customer_id = c.id ' +
+          'GROUP BY c.id ORDER BY c.id DESC LIMIT 500'
+        ).all();
+        return json({ customers: (r.results || []).map(c => Object.assign({}, c, { paid: money(c.paid_cents) })) });
+      }
+
+      return json({ error: 'not found' }, 404);
     }
 
     if (method === 'POST' || method === 'DELETE') {
