@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<!-- build-tag: 2026-11-13 product-variants-v2 -->
+<!-- build-tag: 2026-11-13 product-variants-v3 -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LUNMONT — 发夹与饰品批发 | 义乌市玥岑进出口有限公司</title>
 <meta name="description" content="LUNMONT（义乌市玥岑进出口有限公司）— 发夹与饰品批发，支持小批量起订与出口订单。Yiwu Cenova Import and Export Co., Ltd.">
@@ -285,6 +285,72 @@
   .chip.on{background:var(--ink);border-color:var(--ink);color:#fffdf9}
   .filterbar .tools{display:flex;gap:8px}
   .filterbar input[type=search]{padding:8px 14px;border:1px solid var(--line);background:#fff;font-size:13px;width:200px;font-family:inherit}
+
+  /* ================= 分类归纳系统（左树 + 顶部筛选 + 排序） ================= */
+  .catwrap{display:grid;grid-template-columns:236px 1fr;gap:34px;align-items:start;margin-top:8px}
+  .catwrap.noside{grid-template-columns:1fr}
+  /* --- 左侧分类树 --- */
+  .cattree{position:sticky;top:88px;align-self:start;border:1px solid var(--line);background:#fffdf9;
+    padding:18px 4px 18px 18px;max-height:calc(100vh - 120px);overflow-y:auto}
+  .cattree[hidden]{display:none}
+  .cattree::-webkit-scrollbar{width:5px}
+  .cattree::-webkit-scrollbar-thumb{background:#d8cdb8}
+  .ct-title{font-size:11px;letter-spacing:.28em;color:var(--accent);margin:0 0 14px}
+  .ct-group{margin-bottom:16px}
+  .ct-group>h5{font-size:11px;letter-spacing:.18em;color:#a89878;font-weight:400;
+    margin:0 0 7px;padding-bottom:5px;border-bottom:1px solid #f0e9dc;display:flex;
+    justify-content:space-between;align-items:center}
+  .ct-group>h5 button{border:0;background:none;color:#c0b49c;font-size:10px;cursor:pointer;
+    font-family:inherit;letter-spacing:.05em;padding:0}
+  .ct-group>h5 button:hover{color:var(--accent)}
+  .ct-item{display:flex;align-items:center;justify-content:space-between;width:100%;border:0;
+    background:none;text-align:left;padding:6px 8px;font-size:12.5px;color:#4a4436;cursor:pointer;
+    font-family:inherit;letter-spacing:.02em;transition:background .15s,color .15s;border-left:2px solid transparent}
+  .ct-item:hover{background:#f7f2e8;color:var(--ink)}
+  .ct-item.on{background:#f2ead9;color:var(--ink);border-left-color:var(--accent);font-weight:600}
+  .ct-item .n{font-size:10.5px;color:#b3a894;font-variant-numeric:tabular-nums;flex:0 0 auto;margin-left:8px}
+  .ct-item.on .n{color:var(--accent)}
+  .ct-item .sw{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:8px;
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.13);flex:0 0 auto;vertical-align:-1px}
+  .ct-sub{padding-left:10px}
+  .ct-clear{width:100%;border:1px dashed var(--line);background:none;color:#a89878;font-size:11px;
+    letter-spacing:.1em;padding:7px;cursor:pointer;font-family:inherit;margin-top:4px}
+  .ct-clear:hover{border-color:var(--accent);color:var(--accent)}
+  /* --- 顶部筛选条 --- */
+  .fbar2{display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:14px 16px;
+    background:#fffdf9;border:1px solid var(--line);margin-bottom:20px}
+  .frow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .frow>label{font-size:10.5px;letter-spacing:.16em;color:#a89878;flex:0 0 auto}
+  .fchip{border:1px solid var(--line);background:#fff;color:var(--muted);font-size:11.5px;
+    padding:5px 12px;cursor:pointer;font-family:inherit;transition:.15s;letter-spacing:.03em;
+    display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .fchip:hover{border-color:var(--accent);color:var(--ink)}
+  .fchip.on{background:var(--ink);border-color:var(--ink);color:#fffdf9}
+  .fchip .sw{width:10px;height:10px;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(0,0,0,.16)}
+  .fchip .c{font-size:10px;opacity:.6;font-variant-numeric:tabular-nums}
+  .fbar2 .spacer{flex:1 1 40px}
+  .fbar2 input[type=search]{padding:7px 12px;border:1px solid var(--line);background:#fff;
+    font-size:12.5px;width:180px;font-family:inherit}
+  .fbar2 select{padding:7px 9px;border:1px solid var(--line);background:#fff;font-size:12px;
+    color:#4a4436;cursor:pointer;font-family:inherit}
+  .fbar2 .cnt{font-size:11px;color:#a89878;letter-spacing:.06em}
+  /* 已选条件回显 */
+  .factive{display:flex;flex-wrap:wrap;gap:6px;margin:-8px 0 18px}
+  .factive[hidden]{display:none}
+  .ftag{display:inline-flex;align-items:center;gap:6px;background:#f2ead9;color:#6b5f45;
+    font-size:11px;padding:4px 6px 4px 10px;letter-spacing:.04em}
+  .ftag b{font-weight:600;color:var(--ink)}
+  .ftag button{border:0;background:none;color:#a89878;cursor:pointer;font-size:14px;
+    line-height:1;padding:0 2px;font-family:inherit}
+  .ftag button:hover{color:#c0392b}
+  /* 卡片角标：品类 / 尺寸 */
+  .card .tags{position:absolute;left:12px;top:12px;display:flex;gap:5px;z-index:3;flex-wrap:wrap;max-width:70%}
+  .card .tags span{font-size:9.5px;letter-spacing:.1em;padding:3px 7px;background:rgba(15,14,12,.55);
+    color:#fff;backdrop-filter:blur(3px)}
+  @media (max-width:960px){
+    .catwrap{grid-template-columns:1fr}
+    .cattree{position:static;max-height:none;order:2;margin-top:8px}
+  }
   .filterbar select{padding:8px 10px;border:1px solid var(--line);background:#fff;font-size:12px;color:var(--muted);cursor:pointer}
   .card .pen{position:absolute;top:14px;left:14px;background:rgba(15,14,12,.6);color:#fff;border:1px solid rgba(255,255,255,.4);padding:4px 12px;font-size:12px;cursor:pointer;letter-spacing:.1em;display:none;font-family:inherit}
   .edit-on .card .pen{display:block}
@@ -455,23 +521,39 @@
   <div class="loading sans" id="loading">正在加载产品…</div>
   <div class="empty sans" id="empty" style="display:none" data-content-key="empty_text">暂无产品。进入「管理模式」上传你的产品图片即可自动生成卡片。</div>
   <div class="error sans" id="error" style="display:none">产品加载失败，请刷新重试。</div>
-  <div class="filterbar" id="filterBar" hidden>
-    <div class="chips" id="filterChips"></div>
-    <div class="tools">
+
+  <!-- 分类归纳：顶部筛选条 + 已选条件回显 -->
+  <div class="fbar2" id="fbar2" hidden>
+    <div class="frow" id="frowCat"><label>品类<br>TYPE</label></div>
+    <div class="frow" id="frowStyle"><label>款式<br>STYLE</label></div>
+    <div class="frow" id="frowSize"><label>尺寸<br>SIZE</label></div>
+    <div class="frow" id="frowFam"><label>色系<br>COLOR</label></div>
+    <div class="spacer"></div>
+    <div class="frow">
+      <span class="fbar2"></span>
       <span class="toolbar-v" id="vModeSwitch" title="花色显示方式：缩略图 / 色点">
         <button data-vm="thumb">缩略图</button><button data-vm="dot">色点</button>
       </span>
       <button type="button" class="zoomBtn on" id="zoomToggle" title="鼠标悬停放大产品图">
         <span class="dot"></span>悬停放大</button>
-      <input type="search" id="searchBox" placeholder="搜索产品 / Search">
+      <input type="search" id="searchBox" placeholder="搜索产品 / SKU / 花色">
       <select id="sortSel">
+        <option value="rank">推荐排序</option>
         <option value="new">最新上架</option>
+        <option value="colors">花色最多</option>
         <option value="name">名称 A-Z</option>
         <option value="cat">按分类</option>
+        <option value="size">按尺寸</option>
       </select>
+      <span class="cnt" id="fCount"></span>
     </div>
   </div>
-  <div class="grid" id="grid"></div>
+  <div class="factive" id="factive" hidden></div>
+
+  <div class="catwrap" id="catwrap">
+    <aside class="cattree" id="cattree" hidden></aside>
+    <div class="grid" id="grid"></div>
+  </div>
 </section>
 
 <div class="vpanel" id="vpanel">
@@ -1735,10 +1817,19 @@ function render(items) {
       }).join('');
       strip = `<div class="vstrip">${sws}${extra>0?`<button class="vmore" data-more="1">+${extra}</button>`:''}</div>`;
     }
+    // 角标：尺寸（有才显示）+ 款式（最多 2 个），让筛选结果一眼可核对
+    const badges = [];
+    if (it.size) badges.push(it.size);
+    (it.styles||[]).slice(0,2).forEach(s=>badges.push(s));
+    const tagHtml = badges.length ? `<div class="tags">${badges.map(t=>`<span>${esc(t)}</span>`).join('')}</div>` : '';
+    // 副标题：品类 · 材质 · N 款花色
+    const sub = [it.category||'', it.material||'', vs.length>1?vs.length+' 款花色':'']
+      .filter(Boolean).join(' · ');
     el.innerHTML = `<img src="${esc(lead.image||it.image)}" alt="${esc(it.name)}" loading="lazy">
       <div class="shade"></div>
+      ${tagHtml}
       ${strip}
-      <div class="cap"><h3>${esc(it.name)}</h3><p class="sans">${esc(it.category||'')}${vs.length>1?' · '+vs.length+' 款花色':''}</p></div>
+      <div class="cap"><h3>${esc(it.baseName||it.name)}</h3><p class="sans">${esc(sub)}</p></div>
       ${editMode && !String(it.id).startsWith('d') ? '<button class="pen sans" data-id="'+esc(it.id)+'">改信息</button><button class="del sans" data-id="'+esc(it.id)+'">删除</button>':''}`;
     el._card = it;
     grid.appendChild(el);
@@ -1797,39 +1888,182 @@ function render(items) {
   });
 }
 
-/* ---- 产品区：全量缓存 + 分类筛选 / 搜索 / 排序 / 灯箱（11-13 功能补齐）---- */
-let liveItems = [], flatItems = [], filterCat = '', searchQ = '', sortMode = 'new';
+/* ---- 产品区：分类归纳（品类/款式/尺寸/色系 四层筛选）+ 搜索 + 排序 + 灯箱 ---- */
+let liveItems = [], flatItems = [], searchQ = '', sortMode = 'rank';
+// 多选筛选状态：空 Set = 不限
+const F = { cat:new Set(), style:new Set(), size:new Set(), fam:new Set() };
+const F_LABEL = { cat:'品类', style:'款式', size:'尺寸', fam:'色系' };
+const FAM_SWATCH = {
+  '红系':'#c0392b','粉系':'#e78787','橙系':'#e89639','黄系':'#e0c04a','绿系':'#4a9b6e',
+  '青系':'#3a9aa8','蓝系':'#3f6fb5','紫系':'#8367b5','棕色系':'#8a5a3b','灰色系':'#9a9a98',
+  '白色系':'#efece5','黑色系':'#2b2b2b','其他':'#c9c2b4'
+};
+const SIZE_ORDER = { '小号':1, '中号':2, '大号':3 };
 
+function itemFacets(x){
+  // 兼容老数据（无分类字段时按原 category 兜底，绝不因缺字段漏筛）
+  return {
+    cat: [x.category || ''],
+    style: Array.isArray(x.styles) ? x.styles : [],
+    size: x.size ? [x.size] : [],
+    fam: x.family ? [x.family] : []
+  };
+}
+function matchF(x){
+  const f = itemFacets(x);
+  for (const k in F){
+    if (F[k].size === 0) continue;
+    if (!f[k].some(v => F[k].has(v))) return false;
+  }
+  return true;
+}
 function visibleItems(){
-  let list = liveItems.slice();
-  if(filterCat) list = list.filter(x=>(x.category||'')===filterCat);
+  let list = liveItems.filter(matchF);
   const q = searchQ.trim().toLowerCase();
-  // 卡片形态：搜索要覆盖卡名 + 全部 SKU（含花色名），否则搜花色搜不到
-  const hay = x => [x.name, x.sku, ...(x.variants||[]).map(v=>[v.sku,v.label,v.color].join(' '))]
+  // 搜索覆盖卡名 + 全部 SKU + 花色名 + 款式标签，否则搜「条纹」搜不到
+  const hay = x => [x.name, x.sku, x.material, x.size, (x.styles||[]).join(' '),
+                    ...(x.variants||[]).map(v=>[v.sku,v.label,v.color].join(' '))]
     .map(t=>String(t||'').toLowerCase()).join(' ');
   if(q) list = list.filter(x=>hay(x).indexOf(q)>=0);
+  const nv = x => (x.variants || []).length;
   if(sortMode==='name') list.sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'zh'));
-  else if(sortMode==='cat') list.sort((a,b)=>String(a.category||'').localeCompare(String(b.category||''),'zh') || String(a.name||'').localeCompare(String(b.name||''),'zh'));
-  else list.sort((a,b)=>Number(b.id)-Number(a.id));
+  else if(sortMode==='cat') list.sort((a,b)=>
+    String(a.category||'').localeCompare(String(b.category||''),'zh') ||
+    String((a.styles||[])[0]||'').localeCompare(String((b.styles||[])[0]||''),'zh') ||
+    String(a.name||'').localeCompare(String(b.name||''),'zh'));
+  else if(sortMode==='colors') list.sort((a,b)=>nv(b)-nv(a) || String(a.name||'').localeCompare(String(b.name||''),'zh'));
+  else if(sortMode==='size') list.sort((a,b)=>(SIZE_ORDER[b.size]||0)-(SIZE_ORDER[a.size]||0) || nv(b)-nv(a));
+  else if(sortMode==='new') list.sort((a,b)=>Number(b.id)-Number(a.id) || String(a.base||'').localeCompare(String(b.base||'')));
+  else list.sort((a,b)=>{ // rank：默认推荐=主推大卡在前，同族按色系顺序，保证稳定不跳动
+    const d = nv(b)-nv(a);
+    if (d) return d;
+    return String(a.name||'').localeCompare(String(b.name||''),'zh');
+  });
   return list;
 }
-function paintFilter(){
-  const bar=$('#filterBar');
-  bar.hidden = liveItems.length===0;
-  const cats=[];
-  liveItems.forEach(x=>{ const c=x.category||''; if(c && cats.indexOf(c)<0) cats.push(c); });
-  const box=$('#filterChips'); box.innerHTML='';
-  const mk=(label,val)=>{
-    const b=document.createElement('button'); b.type='button';
-    b.className='chip'+((filterCat===val)?' on':'');
-    b.textContent=label; b.dataset.v=val;
-    if(!val) b.dataset.contentKey='filter_all';
-    box.appendChild(b);
-  };
-  mk(contentCache.filter_all || '全部','');
-  cats.forEach(c=>mk(c,c));
-  // 铁律：innerHTML 重建的列表，事件绑定写在重建函数末尾
-  box.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{ filterCat=b.dataset.v||''; paintFilter(); render(visibleItems()); });
+
+/* 从 liveItems 统计各维度出现次数（用于树和筛选条的角标） */
+function countBy(field){
+  const m = {};
+  liveItems.forEach(x=>{
+    const f = itemFacets(x);
+    (f[field]||[]).forEach(v=>{ if(v) m[v]=(m[v]||0)+1; });
+  });
+  return m;
+}
+
+/* ---------- 左侧分类树 ---------- */
+function paintTree(){
+  const tree = $('#cattree');
+  if (!liveItems.length){ tree.hidden = true; $('#catwrap').classList.add('noside'); return; }
+  tree.hidden = false; $('#catwrap').classList.remove('noside');
+
+  const groups = [
+    { key:'cat',   title:'品类 TYPE' },
+    { key:'style', title:'款式 STYLE' },
+    { key:'size',  title:'尺寸 SIZE' },
+    { key:'fam',   title:'色系 COLOR' },
+  ];
+  let html = '<p class="ct-title">分类 / CATEGORIES</p>';
+  groups.forEach(g=>{
+    const cnt = countBy(g.key);
+    const keys = Object.keys(cnt);
+    if (!keys.length) return;
+    // 尺寸按 小→中→大 排；色系按固定色环顺序；其余按数量降序
+    if (g.key === 'size') keys.sort((a,b)=>(SIZE_ORDER[a]||9)-(SIZE_ORDER[b]||9));
+    else if (g.key === 'fam') keys.sort((a,b)=>(Object.keys(FAM_SWATCH).indexOf(a))-(Object.keys(FAM_SWATCH).indexOf(b)));
+    else keys.sort((a,b)=>cnt[b]-cnt[a]);
+    const first = keys[0];
+    const open = F[g.key].size > 0;
+    // 分组标题右侧的「清除」只在该组有选中项时出现，避免一排无意义的按钮
+    html += `<div class="ct-group" data-g="${g.key}"><h5>${g.title}${
+      F[g.key].size ? `<button type="button" class="ct-all" data-g="${g.key}">清除</button>` : ''
+    }</h5>`;
+    html += `<div class="ct-sub">`;
+    keys.slice(0, g.key==='fam'?14:20).forEach(k=>{
+      const on = F[g.key].has(k) ? ' on' : '';
+      const sw = g.key==='fam'
+        ? `<span class="sw" style="background:${FAM_SWATCH[k]||'#ccc'}"></span>` : '';
+      html += `<button type="button" class="ct-item${on}" data-g="${g.key}" data-v="${esc(k)}">
+        <span>${sw}${esc(k)}</span><span class="n">${cnt[k]}</span></button>`;
+    });
+    html += `</div></div>`;
+  });
+  html += `<button type="button" class="ct-clear" id="ctClear">清除全部筛选</button>`;
+  tree.innerHTML = html;
+
+  // 铁律：innerHTML 重建后事件绑定必须写在此函数末尾
+  tree.querySelectorAll('.ct-item').forEach(b=>b.onclick=()=>{
+    const g=b.dataset.g, v=b.dataset.v;
+    if (F[g].has(v)) F[g].delete(v); else F[g].add(v);
+    refresh();
+  });
+  tree.querySelectorAll('.ct-all').forEach(b=>b.onclick=()=>{
+    F[b.dataset.g].clear(); refresh();
+  });
+  const cl = $('#ctClear'); if (cl) cl.onclick=()=>{ clearFilters(); };
+}
+
+/* ---------- 顶部筛选条 ---------- */
+function paintFbar(){
+  const bar = $('#fbar2');
+  bar.hidden = liveItems.length === 0;
+  if (!liveItems.length) return;
+  const rows = [
+    { id:'frowCat',   key:'cat',   limit:6 },
+    { id:'frowStyle', key:'style', limit:10 },
+    { id:'frowSize',  key:'size',  limit:4 },
+    { id:'frowFam',   key:'fam',   limit:7 },
+  ];
+  rows.forEach(r=>{
+    const box = $('#'+r.id); if (!box) return;
+    // 保留 label，清掉其余 chip
+    [...box.querySelectorAll('.fchip')].forEach(e=>e.remove());
+    const cnt = countBy(r.key);
+    let keys = Object.keys(cnt);
+    if (r.key==='size') keys.sort((a,b)=>(SIZE_ORDER[a]||9)-(SIZE_ORDER[b]||9));
+    else if (r.key==='fam') keys.sort((a,b)=>(Object.keys(FAM_SWATCH).indexOf(a))-(Object.keys(FAM_SWATCH).indexOf(b)));
+    else keys.sort((a,b)=>cnt[b]-cnt[a]);
+    keys = keys.slice(0, r.limit);
+    keys.forEach(k=>{
+      const b = document.createElement('button');
+      b.type='button';
+      b.className = 'fchip' + (F[r.key].has(k)?' on':'');
+      const sw = r.key==='fam' ? `<span class="sw" style="background:${FAM_SWATCH[k]||'#ccc'}"></span>` : '';
+      b.innerHTML = sw + esc(k) + `<span class="c">${cnt[k]}</span>`;
+      b.onclick = ()=>{ if(F[r.key].has(k)) F[r.key].delete(k); else F[r.key].add(k); refresh(); };
+      box.appendChild(b);
+    });
+  });
+  const total = liveItems.length, shown = visibleItems().length;
+  $('#fCount').textContent = shown === total ? `${total} 款产品` : `${shown} / ${total} 款`;
+}
+
+/* ---------- 已选条件回显（可单个移除） ---------- */
+function paintActive(){
+  const box = $('#factive');
+  const tags = [];
+  for (const k in F) F[k].forEach(v=>tags.push([k,v]));
+  if (!tags.length){ box.hidden = true; box.innerHTML=''; return; }
+  box.hidden = false;
+  box.innerHTML = tags.map(([k,v])=>
+    `<span class="ftag">${F_LABEL[k]}：<b>${esc(v)}</b>
+      <button type="button" data-g="${k}" data-v="${esc(v)}" title="移除">×</button></span>`).join('')
+    + `<span class="ftag" style="background:#e8ded0;cursor:pointer" id="fClearAll">全部清除 ×</span>`;
+  box.querySelectorAll('.ftag button').forEach(b=>b.onclick=()=>{
+    F[b.dataset.g].delete(b.dataset.v); refresh();
+  });
+  const ca = $('#fClearAll'); if (ca) ca.onclick = clearFilters;
+}
+function clearFilters(){
+  for (const k in F) F[k].clear();
+  searchQ=''; const sb=$('#searchBox'); if(sb) sb.value='';
+  refresh();
+}
+/* 三处 UI 一起刷新再重绘网格 */
+function refresh(){
+  paintTree(); paintFbar(); paintActive();
+  render(visibleItems());
 }
 /* ---- 全部花色面板：一个产品的所有 SKU ---- */
 function openVPanel(card){
@@ -1881,11 +2115,10 @@ function setInqTag(it){
 }
 $('#inqTagClear').onclick=()=>{ inqProduct=''; $('#inqTag').hidden=true; };
 
-$('#searchBox').oninput=()=>{ searchQ=$('#searchBox').value; render(visibleItems()); };
+$('#searchBox').oninput=()=>{ searchQ=$('#searchBox').value; paintFbar(); render(visibleItems()); };
 // 悬停放大开关绑定（必须在 DOM 就绪后调用一次；render 内部只同步视觉状态）
 bindZoom(); syncZoom();
 $('#sortSel').onchange=()=>{ sortMode=$('#sortSel').value; render(visibleItems()); };
-
 $('#inqForm').onsubmit=async e=>{
   e.preventDefault();
   if($('#inqHp').value) return; // 蜜罐：填了=机器人，静默丢弃
@@ -1985,8 +2218,10 @@ async function load(){
     // 服务端按 parent_sku 聚合成 cards；老后端（无 cards 字段）自动退回扁平行
     liveItems = (d.cards && d.cards.length) ? d.cards : (d.products||[]);
     flatItems = d.products || liveItems;
-    paintFilter();
-    render(visibleItems());
+    // 分类维度来自 tools/_gen_site_taxonomy.py 的产物（写进 D1 的新列），
+    // 后端没这些列时字段缺失 → itemFacets/filter 自动降级，不报错。
+    $('#loading').style.display='none';
+    refresh();
   }catch(e){
     $('#loading').style.display='none'; $('#error').style.display='block';
   }
