@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<!-- build-tag: 2026-11-14 reg-name-default-seo-20261122 -->
+<!-- build-tag: 2026-11-22 i18n-switch-20261122 -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hair Clips & Hair Accessories Manufacturer | LUNMONT</title>
 <meta name="description" content="LUNMONT is a Yiwu hair clip and hair accessories manufacturer offering acetate clips, claw clips and custom wholesale orders with low MOQ. Request a quote today.">
@@ -160,6 +160,13 @@
   .editbar button.active{background:#fffdf9;color:#0f0e0c;border-color:#fffdf9}
   .editbar button:disabled{opacity:.4}
   .editbar button[hidden]{display:none}
+  .editbar .lang-edit{display:inline-flex;align-items:center;gap:6px;color:#e8ddc9;white-space:nowrap}
+  .editbar .lang-edit select{padding:6px 8px;background:#fffdf9;color:#0f0e0c;border:1px solid #8a7a60;font-size:12px;cursor:pointer}
+  .lang-switch{display:inline-flex;gap:4px;margin-left:18px;vertical-align:middle;letter-spacing:.04em}
+  .lang-switch[hidden]{display:none}
+  .lang-switch button{padding:3px 7px;border:1px solid #cfc6b8;background:transparent;color:var(--muted);font-size:11px;letter-spacing:.06em;cursor:pointer}
+  .lang-switch button:hover{color:var(--ink);border-color:var(--ink)}
+  .lang-switch button.on{background:var(--ink);color:#fffdf9;border-color:var(--ink)}
   .pick-on [data-content-key]{cursor:pointer;outline:1px dashed rgba(55,138,221,.6);outline-offset:3px}
   .pick-on [data-content-key]:hover{outline:2px solid #378add;background:rgba(55,138,221,.10)}
   .pick-on [data-content-key].marked{outline:2px solid #d85a30;background:rgba(216,90,48,.14)}
@@ -507,6 +514,14 @@
 <body>
 <div class="editbar sans" id="editBar" hidden>
   <span id="editTip">可视化编辑中：直接点页面文字修改，也可拖选一段只改这段</span>
+  <label class="lang-edit">编辑语言
+    <select id="editLang" title="切换后只读写所选语言，不覆盖其它语言">
+      <option value="base">基础（原版）</option>
+      <option value="en">English</option>
+      <option value="zh">中文</option>
+      <option value="ru">Русский</option>
+    </select>
+  </label>
   <button type="button" id="modeText" class="active">直接改字</button>
   <button type="button" id="modePick" class="ghost">圈选 + AI</button>
   <span class="sel-info" id="selInfo" hidden></span>
@@ -665,6 +680,11 @@
     <a href="#products" data-content-key="nav_products">Products / 产品展示</a>
     <a href="/about">About</a>
     <a href="#contact" data-content-key="nav_contact">Contact / 联系我们</a>
+    <span class="lang-switch" id="langSwitch" aria-label="Language / 语言 / Язык">
+      <button type="button" data-lang="en" class="on" aria-pressed="true">EN</button>
+      <button type="button" data-lang="zh" aria-pressed="false">中文</button>
+      <button type="button" data-lang="ru" aria-pressed="false">RU</button>
+    </span>
     <a href="#" id="navOrders" hidden>我的订单</a>
     <span id="navTierTag" hidden title="当前显示批发价">批发价</span>
     <a href="#" id="navAccount">登录<span class="cart-badge" id="cartBadge"></span></a>
@@ -885,9 +905,45 @@ const $ = s => document.querySelector(s);
 
 function adminKey(){ return sessionStorage.getItem('lunmont_admin_key') || ''; }
 
+/* ---- 多语言：访客展示语言与后台编辑语言分开存，切换一方不覆盖另一方 ----
+   base = 历史主表（老工具不传 lang 时的行为，绝不自动迁移/覆盖）；
+   en/zh/ru = site_content_i18n 独立译文行，保存时只写当前语言。          */
+const LM_LANG_DISPLAY = 'lm_display_lang', LM_LANG_EDIT = 'lm_edit_lang';
+const LANG_LABELS = {base:'基础（原版）', en:'English', zh:'中文', ru:'Русский'};
+let displayLang = 'en', editLang = 'base';
+try{ displayLang = localStorage.getItem(LM_LANG_DISPLAY) || 'en'; }catch(e){}
+try{ editLang = localStorage.getItem(LM_LANG_EDIT) || 'base'; }catch(e){}
+if(['en','zh','ru'].indexOf(displayLang) < 0) displayLang = 'en';
+if(['base','en','zh','ru'].indexOf(editLang) < 0) editLang = 'base';
+try{
+  const q = new URL(location.href).searchParams.get('lang');
+  if(q){
+    const ql = q.toLowerCase().trim();
+    if(['en','zh','ru'].indexOf(ql) >= 0){ displayLang = ql; editLang = ql; }
+    else if(ql === 'base'){ editLang = 'base'; }
+  }
+}catch(e){}
+function activeLang(){ return editMode ? editLang : displayLang; }
+function langApiPath(path){
+  if(!/^\/(content(\/|$)|ai-edit$)/.test(path)) return path;
+  return path + (path.indexOf('?') >= 0 ? '&' : '?') + 'lang=' + encodeURIComponent(activeLang());
+}
+function paintLang(){
+  const a = activeLang();
+  document.documentElement.lang = a === 'zh' ? 'zh-CN' : (a === 'ru' ? 'ru' : 'en');
+  const ol = document.querySelector('meta[property="og:locale"]');
+  if(ol) ol.content = a === 'zh' ? 'zh_CN' : (a === 'ru' ? 'ru_RU' : 'en_US');
+  document.querySelectorAll('#langSwitch button').forEach(b=>{
+    const on = b.dataset.lang === a;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  const sel = $('#editLang'); if(sel) sel.value = editLang;
+}
+
 async function api(path, opts={}) {
   const headers = Object.assign({'X-Admin-Key': adminKey()}, opts.headers || {});
-  return fetch('/api'+path, Object.assign({credentials:'same-origin'}, opts, {headers}));
+  return fetch('/api'+langApiPath(path), Object.assign({credentials:'same-origin'}, opts, {headers}));
 }
 
 function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
@@ -937,7 +993,7 @@ function snapshotContent(){
 
 async function loadContent(seq){
   try{
-    const r = await fetch('/api/content',{credentials:'same-origin'});
+    const r = await fetch('/api/content?lang=' + encodeURIComponent(activeLang()),{credentials:'same-origin'});
     if(!r.ok) return false;
     const d = await r.json();
     if(d.content && Object.keys(d.content).length){
@@ -988,7 +1044,8 @@ async function saveContent(){
     if(!r.ok) throw new Error(d.detail || d.error || r.status);
     contentCache = content; contentBaseline = content;
     applyContent(contentCache);
-    setContentStatus('已保存，访客刷新即可看到新文案','ok');
+    setContentStatus('已保存'+LANG_LABELS[activeLang()]+'：'+
+      (activeLang()==='base' ? '基础文案更新' : '仅该语言访客刷新可见'),'ok');
   }catch(e){ setContentStatus('保存失败：' + String(e.message||e).slice(0,60),'err'); }
   finally{ btn.disabled = false; }
 }
@@ -998,6 +1055,53 @@ $('#resetContent').onclick = ()=>{
   applyContent(contentBaseline || contentCache || snapshotContent());
   setContentStatus('已放弃未保存的修改');
 };
+
+/* ---- 多语言切换：访客切展示语言，管理员在编辑条切「编辑语言」 ----
+   两者互不覆盖：访客选中文不会改掉管理员正在编辑的英文，反之亦然。 */
+function contentDirty(){
+  if(!contentBaseline) return false;
+  try{ return JSON.stringify(snapshotContent()) !== JSON.stringify(contentBaseline); }
+  catch(e){ return false; }
+}
+async function switchDisplayLang(l){
+  if(['en','zh','ru'].indexOf(l) < 0 || l === activeLang()) return;
+  displayLang = l;
+  try{ localStorage.setItem(LM_LANG_DISPLAY, l); }catch(e){}
+  try{
+    const u = new URL(location.href);
+    u.searchParams.set('lang', l);
+    history.replaceState(null,'',u.pathname + (u.search||'') + u.hash);
+  }catch(e){}
+  paintLang();
+  const seq = ++contentLoadSeq;
+  await loadContent(seq);
+}
+$('#langSwitch').querySelectorAll('button').forEach(b=>{
+  b.onclick = ()=>switchDisplayLang(b.dataset.lang);
+});
+$('#editLang').addEventListener('change', async (e)=>{
+  const next = e.target.value;
+  if(next === editLang) return;
+  if(contentDirty() && !confirm('当前语言有未保存的修改，切换语言会丢失。确定切换？')){
+    e.target.value = editLang; return;
+  }
+  // 旧语言的预览/草稿预览必须先退场，否则会残留到新语言
+  if(pickMode) setPickMode(false); else invalidatePreview();
+  if(verPreviewing !== null) backToCurrent();
+  if(draftPreviewing !== null) draftBack();
+  editLang = next;
+  try{ localStorage.setItem(LM_LANG_EDIT, next); }catch(e){}
+  paintLang();
+  setContentStatus('正在读取'+LANG_LABELS[next]+'文案…');
+  const seq = ++contentLoadSeq;
+  const ok = await loadContent(seq);
+  if(seq === contentLoadSeq){
+    contentBaseline = ok ? snapshotContent() : null;
+    setContentStatus('已切到'+LANG_LABELS[next]+'，保存/草稿只写这个语言','ok');
+  }
+  loadDraft();
+  if($('#verPanel') && !$('#verPanel').hidden) loadVersions();
+});
 
 /* ---- AI 修图式编辑：圈选标记 + 提示词 → 预览 → 应用 ---- */
 const FIELD_LABELS = {
@@ -2533,20 +2637,26 @@ async function enterEditMode(){
   editMode=true;
   document.body.classList.add('edit-on');
   $('#editBar').hidden = false;
+  $('#langSwitch').hidden = true;   // 编辑态用编辑条里的语言下拉，避免两套切换互相打架
+  paintLang();
   if(pickMode) setPickMode(false);
   setEditable(!pickMode);
   paintSelBar();
   primeSeo();
   paintBlockLabels();
   loadDraft();
-  // baseline 同步取，别等异步读取；用户一动手 input 监听会把 seq 推高，晚到响应即作废
-  contentBaseline = snapshotContent();
-  setContentStatus('正在读取最新文案…');
+  // baseline 同步取，别等异步读取；用户一动手 input 监听会把 seq 推高，晚到响应即作废。
+  // 若编辑语言≠访客当前展示语言，先读回对应语言再定基线，避免拿错语言当「原稿」。
+  const sameLang = editLang === displayLang;
+  if(sameLang) contentBaseline = snapshotContent();
+  setContentStatus('正在读取'+LANG_LABELS[editLang]+'文案…');
   const seq = ++contentLoadSeq;
   const fresh = await loadContent(seq);
   if(seq === contentLoadSeq){
     if(fresh) contentBaseline = snapshotContent();
-    setContentStatus('点页面文字直接改，改完点「保存文案」');
+    else if(!sameLang) contentBaseline = null;
+    setContentStatus(fresh ? ('点页面文字直接改，改完点「保存文案」（当前：'+LANG_LABELS[editLang]+'）')
+                           : '文案读取失败，请刷新重试', fresh ? 'ok' : 'err');
   }
   load();
 }
@@ -2556,6 +2666,8 @@ function exitEditMode(){
   sessionStorage.removeItem('lunmont_admin_key');
   document.body.classList.remove('edit-on');
   $('#editBar').hidden = true;
+  $('#langSwitch').hidden = false;
+  paintLang();
   if(pickMode) setPickMode(false);
   setEditable(false);
   textSel=null; stylePickMode=false; syncStylePick();
@@ -2573,8 +2685,16 @@ function exitEditMode(){
   if(contentBaseline) applyContent(contentBaseline);
   setContentStatus('');
   load();
-  // 退出后清掉 ?admin=1，避免刷新又进编辑态、也不留可被分享的地址
-  try { history.replaceState(null,'',location.pathname + location.hash); } catch(e){}
+  // 退出管理后读回访客展示语言（编辑语言可能是中文/基础版）
+  const seq = ++contentLoadSeq;
+  loadContent(seq);
+  // 退出后清掉 ?admin=1，但保留 ?lang=xx，避免刷新又进编辑态
+  try {
+    const u = new URL(location.href);
+    u.searchParams.delete('admin');
+    if(['en','zh','ru'].indexOf(displayLang) >= 0) u.searchParams.set('lang', displayLang);
+    history.replaceState(null,'',u.pathname + (u.search||'') + u.hash);
+  } catch(e){}
 }
 
 /* 编辑条上的「退出管理」按钮（首页 nav 已无入口，退出只能从这里或关标签页） */
@@ -3175,6 +3295,7 @@ paintCartBadge();
 meInit();
 
 load();
+paintLang();
 loadContent();
 // 访客也要应用自定义样式：样式是公开只读接口
 loadStyles();
