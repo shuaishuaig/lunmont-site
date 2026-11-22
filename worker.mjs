@@ -91,6 +91,17 @@ const CONTENT_SCHEMA = `CREATE TABLE IF NOT EXISTS site_content (
   updated_at TEXT DEFAULT (datetime('now'))
 )`;
 
+// 2026-11-22 SEO：产品英文内容独立表。绝不给 products 加列——cleanProduct/upsertMany
+// 是全列写入，加了列却不在写入清单里会被每次发布清零（项目铁律）。独立表按 sku 关联，
+// 后台产品编辑（name/category/image/price）照旧，SEO 文案单独维护、互不干扰。
+const PRODUCT_SEO_SCHEMA = `CREATE TABLE IF NOT EXISTS product_seo (
+  sku TEXT PRIMARY KEY,
+  name_en TEXT DEFAULT '',
+  slug TEXT DEFAULT '',
+  description_en TEXT DEFAULT '',
+  updated_at TEXT DEFAULT (datetime('now'))
+)`;
+
 const SETTINGS_SCHEMA = `CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL DEFAULT ''
@@ -1043,6 +1054,292 @@ async function writeContentMap(env, c) {
   await env.DB.prepare(sql).bind(...params).run();
 }
 
+/* =====================================================================
+   2026-11-22 SEO 落地页（Worker SSR）
+   - /p/<slug>          产品详情（Product + BreadcrumbList Schema）
+   - /c/<slug>          分类页（CollectionPage + ItemList Schema）
+   - /sitemap.xml       动态 sitemap（D1 产品 + 静态页）
+   - /api/seo/products  SEO 文案读写（GET 公开 / POST 需 X-Admin-Key）
+   数据与后台编辑完全隔离：products 表一个字段都不动，英文文案存 product_seo。
+   ===================================================================== */
+const SEO_ORIGIN = 'https://www.lunmont.com';
+
+// 类目中文 → 英文 slug/title。新类目在此登记；未登记时回退通用映射，绝不 404。
+const CATEGORY_I18N = {
+  '醋酸发夹': { slug: 'acetate-hair-clips', en: 'Acetate Hair Clips' },
+  '经典发夹': { slug: 'classic-hair-clips', en: 'Classic Hair Clips' },
+  '珍珠系列': { slug: 'pearl-hair-accessories', en: 'Pearl Hair Accessories' },
+  '金属抓夹': { slug: 'metal-claw-clips', en: 'Metal Claw Clips' },
+  '流行配饰': { slug: 'fashion-hair-accessories', en: 'Fashion Hair Accessories' },
+  '其他': { slug: 'other-hair-accessories', en: 'Other Hair Accessories' }
+};
+function catI18n(cat) {
+  if (CATEGORY_I18N[cat]) return CATEGORY_I18N[cat];
+  // 未登记类目：slug 用 unicode-safe 兜底，title 保留原文（不编造英文）
+  const slug = 'cat-' + String(cat || 'all').replace(/[^\w\u4e00-\u9fa5]+/g, '-').slice(0, 40);
+  return { slug, en: String(cat || 'Hair Accessories') };
+}
+
+async function ensureProductSeo(env) {
+  await env.DB.prepare(PRODUCT_SEO_SCHEMA).run();
+}
+
+function seoTitle(p, seo) {
+  const en = (seo && seo.name_en) || '';
+  const base = en || String(p.name || '').slice(0, 60);
+  return (base + ' | LUNMONT').slice(0, 65);
+}
+function seoDesc(p, seo) {
+  const d = (seo && seo.description_en) || '';
+  if (d) return String(d).slice(0, 160);
+  const cat = catI18n(p.category).en;
+  const sku = p.sku ? (' (SKU ' + p.sku + ')') : '';
+  return ('Wholesale ' + cat + sku + ' from LUNMONT, a Yiwu hair accessories manufacturer. '
+        + 'Low MOQ, custom designs, worldwide export. Request a quote.').slice(0, 160);
+}
+function productSlug(p, seo) {
+  if (seo && seo.slug) return String(seo.slug).slice(0, 80);
+  const sku = String(p.sku || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return sku || ('item-' + p.id);
+}
+function absImage(img) {
+  const s = String(img || '');
+  if (/^https?:\/\//i.test(s)) return s.replace(/^https?:\/\/[^/]+/, SEO_ORIGIN);
+  return s;
+}
+
+function seoPageHead(title, desc, canonical, extraSchema) {
+  return '<!doctype html>\n<html lang="en">\n<head>\n' +
+    '<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n' +
+    '<title>' + escHtml(title) + '</title>\n' +
+    '<meta name="description" content="' + escHtml(desc) + '">\n' +
+    '<link rel="canonical" href="' + escHtml(canonical) + '">\n' +
+    '<link rel="alternate" hreflang="en" href="' + escHtml(canonical) + '">\n' +
+    '<link rel="alternate" hreflang="x-default" href="' + escHtml(canonical) + '">\n' +
+    '<meta property="og:type" content="website">\n' +
+    '<meta property="og:title" content="' + escHtml(title) + '">\n' +
+    '<meta property="og:description" content="' + escHtml(desc) + '">\n' +
+    '<meta property="og:url" content="' + escHtml(canonical) + '">\n' +
+    '<meta name="twitter:card" content="summary_large_image">\n' +
+    '<script type="application/ld+json">' + JSON.stringify(extraSchema) + '</script>\n' +
+    '<style>' +
+    '*{box-sizing:border-box}body{margin:0;background:#fffdf9;color:#0f0e0c;font:16px/1.7 "PingFang SC","Microsoft YaHei",system-ui,sans-serif}' +
+    'nav{padding:18px 6vw;border-bottom:1px solid #e7e1d8;display:flex;gap:24px;align-items:center}' +
+    'nav a{color:#0f0e0c;text-decoration:none;font-size:14px}.logo{font-weight:700;letter-spacing:.3em}' +
+    'main{max-width:1080px;margin:0 auto;padding:40px 6vw 80px}' +
+    '.crumb{font-size:13px;color:#7d7770;margin-bottom:20px}.crumb a{color:#9a7b4f;text-decoration:none}' +
+    'h1{font-size:clamp(24px,4vw,38px);margin:0 0 12px;line-height:1.3}' +
+    '.sub{color:#7d7770;margin-bottom:32px}' +
+    '.hero-img{width:100%;max-height:520px;object-fit:contain;background:#f4efe7;margin-bottom:28px}' +
+    'h2{font-size:20px;margin:32px 0 12px;border-bottom:1px solid #e7e1d8;padding-bottom:8px}' +
+    'table{border-collapse:collapse;width:100%;font-size:14px}td,th{border:1px solid #e7e1d8;padding:10px 14px;text-align:left}th{background:#f6f1e8;width:32%}' +
+    '.cta{display:inline-block;margin:28px 8px 0 0;padding:13px 30px;background:#0f0e0c;color:#fff;text-decoration:none;font-size:14px}' +
+    '.cta.alt{background:transparent;color:#0f0e0c;border:1px solid #0f0e0c}' +
+    '.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:20px}' +
+    '.card{border:1px solid #e7e1d8;padding:12px;text-decoration:none;color:inherit;display:block}' +
+    '.card img{width:100%;aspect-ratio:1;object-fit:cover;background:#f4efe7}' +
+    '.card h3{font-size:14px;margin:10px 0 0;line-height:1.4}' +
+    'footer{border-top:1px solid #e7e1d8;padding:28px 6vw;font-size:13px;color:#7d7770;text-align:center}' +
+    '</style></head>\n<body>' +
+    '<nav><a class="logo" href="/">LUNMONT</a><a href="/">Home</a><a href="/#products">Products</a><a href="/#contact">Contact</a></nav>\n<main>';
+}
+function seoPageFoot() {
+  return '</main><footer>© 2026 LUNMONT · Yiwu Cenova Import and Export Co., Ltd. · ' +
+    '<a href="/privacy">Privacy</a> · <a href="/return">Returns</a> · <a href="/terms">Terms</a></footer></body></html>';
+}
+function crumb(items) {
+  return '<div class="crumb">' + items.map((x, i) =>
+    x.href ? '<a href="' + escHtml(x.href) + '">' + escHtml(x.name) + '</a>' : escHtml(x.name)
+  ).join(' / ') + '</div>';
+}
+
+async function renderProductPage(env, slug) {
+  await ensureProductSeo(env);
+  // slug 可能在 product_seo.slug，也可能就是 sku 归一化后的值
+  const seoRows = await env.DB.prepare('SELECT * FROM product_seo').all();
+  const seoMap = {};
+  for (const s of (seoRows.results || [])) {
+    if (s.slug) seoMap[String(s.slug).toLowerCase()] = s;
+    if (s.sku) seoMap['sku:' + String(s.sku).toLowerCase()] = s;
+  }
+  let seo = seoMap[slug.toLowerCase()] || null;
+  let p = null;
+  // 先按 sku 找（最稳），再按 product_seo.slug 反查 sku
+  const bySku = await env.DB.prepare(
+    'SELECT id, name, category, image, sku, material, size_type, styles, family, price FROM products WHERE lower(sku)=? LIMIT 1'
+  ).bind(slug.replace(/^sku:/, '').toLowerCase()).first();
+  if (bySku) { p = bySku; if (!seo) seo = seoMap['sku:' + String(p.sku).toLowerCase()] || null; }
+  if (!p && seo && seo.sku) {
+    p = await env.DB.prepare(
+      'SELECT id, name, category, image, sku, material, size_type, styles, family, price FROM products WHERE sku=? LIMIT 1'
+    ).bind(seo.sku).first();
+  }
+  if (!p) return null;
+  const title = seoTitle(p, seo);
+  const desc = seoDesc(p, seo);
+  const canonical = SEO_ORIGIN + '/p/' + encodeURIComponent(productSlug(p, seo)) + '/';
+  const cat = catI18n(p.category);
+  const nameEn = (seo && seo.name_en) || String(p.name || '');
+  const img = absImage(p.image);
+  const schema = {
+    '@context': 'https://schema.org', '@graph': [
+      { '@type': 'Product', '@id': canonical + '#product', name: nameEn,
+        image: img ? [img] : undefined,
+        description: desc, sku: p.sku || undefined,
+        brand: { '@type': 'Brand', name: 'LUNMONT' },
+        manufacturer: { '@type': 'Organization', name: 'Yiwu Cenova Import and Export Co., Ltd.' },
+        category: cat.en },
+      { '@type': 'BreadcrumbList', '@id': canonical + '#breadcrumb', itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Home', item: SEO_ORIGIN + '/' },
+        { '@type': 'ListItem', position: 2, name: cat.en, item: SEO_ORIGIN + '/c/' + cat.slug + '/' },
+        { '@type': 'ListItem', position: 3, name: nameEn, item: canonical }
+      ] }
+    ]
+  };
+  const specs = [];
+  if (p.sku) specs.push(['SKU', escHtml(p.sku)]);
+  if (p.material) specs.push(['Material', escHtml(p.material)]);
+  if (p.size_type) specs.push(['Size', escHtml(p.size_type)]);
+  if (p.styles) specs.push(['Style', escHtml(String(p.styles).replace(/,/g, ', '))]);
+  if (p.family) specs.push(['Collection', escHtml(p.family)]);
+  if (p.category) specs.push(['Category', escHtml(cat.en)]);
+  const specHtml = specs.length
+    ? '<h2>Key Specifications</h2><table>' + specs.map(r => '<tr><th>' + r[0] + '</th><td>' + r[1] + '</td></tr>').join('') + '</table>'
+    : '';
+  const body =
+    crumb([{ name: 'Home', href: '/' }, { name: cat.en, href: '/c/' + cat.slug + '/' }, { name: nameEn }]) +
+    '<h1>' + escHtml(nameEn) + '</h1>' +
+    '<p class="sub">' + escHtml(cat.en) + (p.sku ? ' · SKU ' + escHtml(p.sku) : '') + ' · Wholesale &amp; Custom Orders</p>' +
+    (img ? '<img class="hero-img" src="' + escHtml(img) + '" alt="' + escHtml(nameEn + ' - ' + cat.en) + '">' : '') +
+    '<h2>Product Overview</h2><p>' + escHtml(desc) + '</p>' + specHtml +
+    '<h2>Wholesale &amp; Customization</h2>' +
+    '<p>LUNMONT supplies hair accessories to wholesalers, retailers and distributors worldwide. ' +
+    'Low minimum order quantities, custom colors and designs, and export service from Yiwu, China. ' +
+    'Contact us for the latest wholesale price and lead time.</p>' +
+    '<a class="cta" href="/#contact">Request a Quote</a>' +
+    '<a class="cta alt" href="/c/' + cat.slug + '/">More ' + escHtml(cat.en) + '</a>';
+  return new Response(seoPageHead(title, desc, canonical, schema) + body + seoPageFoot(), {
+    status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' }
+  });
+}
+
+async function renderCategoryPage(env, slug) {
+  await ensureProductSeo(env);
+  let catKey = null;
+  for (const k of Object.keys(CATEGORY_I18N)) {
+    if (CATEGORY_I18N[k].slug === slug) { catKey = k; break; }
+  }
+  if (!catKey) return null;
+  const ci = CATEGORY_I18N[catKey];
+  const rows = await env.DB.prepare(
+    'SELECT id, name, category, image, sku, price FROM products WHERE category=? ORDER BY id DESC LIMIT 200'
+  ).bind(catKey).all();
+  const seoRows = await env.DB.prepare('SELECT sku, slug, name_en FROM product_seo').all();
+  const seoBySku = {};
+  for (const s of (seoRows.results || [])) if (s.sku) seoBySku[s.sku] = s;
+  const canonical = SEO_ORIGIN + '/c/' + ci.slug + '/';
+  const title = ci.en + ' Manufacturer & Wholesale | LUNMONT';
+  const desc = ('Wholesale ' + ci.en + ' from LUNMONT, a Yiwu hair accessories supplier. ' +
+    'Browse ' + (rows.results || []).length + ' designs with low MOQ and custom options. Request a quote.').slice(0, 160);
+  const schema = {
+    '@context': 'https://schema.org', '@graph': [
+      { '@type': 'CollectionPage', '@id': canonical + '#page', name: ci.en, description: desc, url: canonical },
+      { '@type': 'ItemList', numberOfItems: (rows.results || []).length,
+        itemListElement: (rows.results || []).slice(0, 50).map((p, i) => ({
+          '@type': 'ListItem', position: i + 1,
+          url: SEO_ORIGIN + '/p/' + encodeURIComponent(productSlug(p, seoBySku[p.sku])) + '/'
+        })) },
+      { '@type': 'BreadcrumbList', '@id': canonical + '#breadcrumb', itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Home', item: SEO_ORIGIN + '/' },
+        { '@type': 'ListItem', position: 2, name: ci.en, item: canonical }
+      ] }
+    ]
+  };
+  const cards = (rows.results || []).map(p => {
+    const s = seoBySku[p.sku];
+    const nm = (s && s.name_en) || String(p.name || '');
+    const href = '/p/' + encodeURIComponent(productSlug(p, s)) + '/';
+    const im = absImage(p.image);
+    return '<a class="card" href="' + escHtml(href) + '">' +
+      (im ? '<img src="' + escHtml(im) + '" alt="' + escHtml(nm + ' - ' + ci.en) + '" loading="lazy">' : '') +
+      '<h3>' + escHtml(nm) + '</h3></a>';
+  }).join('');
+  const body =
+    crumb([{ name: 'Home', href: '/' }, { name: ci.en }]) +
+    '<h1>' + escHtml(ci.en) + ' Wholesale</h1>' +
+    '<p class="sub">Explore ' + (rows.results || []).length + ' ' + escHtml(ci.en.toLowerCase()) +
+    ' designs. Low MOQ, custom colors and worldwide export from Yiwu, China.</p>' +
+    '<div class="grid">' + cards + '</div>' +
+    '<h2>Buying Guide</h2>' +
+    '<p>LUNMONT is a Yiwu-based manufacturer and wholesale supplier of hair accessories. ' +
+    'We support small-batch orders, custom designs and export shipping. Use the filters on our ' +
+    'main site to narrow by style, size and color, or contact us with a SKU list for a quote.</p>' +
+    '<a class="cta" href="/#contact">Request a Quote</a>';
+  return new Response(seoPageHead(title, desc, canonical, schema) + body + seoPageFoot(), {
+    status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=1800' }
+  });
+}
+
+async function renderSitemap(env) {
+  await ensureProductSeo(env);
+  const staticUrls = [
+    ['/', 'weekly', '1.0'], ['/privacy', 'yearly', '0.3'], ['/return', 'yearly', '0.3'],
+    ['/terms', 'yearly', '0.3'], ['/about', 'monthly', '0.5'],
+    ['/factory', 'monthly', '0.5'], ['/certificates', 'monthly', '0.4']
+  ];
+  let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
+  for (const [u, f, pr] of staticUrls) {
+    xml += '  <url><loc>' + SEO_ORIGIN + u + '</loc><changefreq>' + f + '</changefreq><priority>' + pr + '</priority></url>\n';
+  }
+  const cats = [];
+  for (const k of Object.keys(CATEGORY_I18N)) cats.push('/c/' + CATEGORY_I18N[k].slug + '/');
+  const rows = await env.DB.prepare('SELECT id, sku, name FROM products ORDER BY id DESC LIMIT 1000').all();
+  const seoRows = await env.DB.prepare('SELECT sku, slug FROM product_seo').all();
+  const seoBySku = {};
+  for (const s of (seoRows.results || [])) if (s.sku) seoBySku[s.sku] = s;
+  for (const p of (rows.results || [])) cats.push('/p/' + encodeURIComponent(productSlug(p, seoBySku[p.sku])) + '/');
+  for (const u of cats) {
+    xml += '  <url><loc>' + SEO_ORIGIN + u + '</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>\n';
+  }
+  xml += '</urlset>\n';
+  return new Response(xml, {
+    status: 200, headers: { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600' }
+  });
+}
+
+async function handleSeoApi(env, request, route, method) {
+  if (route === '/seo/products' && method === 'GET') {
+    await ensureProductSeo(env);
+    const r = await env.DB.prepare('SELECT sku, name_en, slug, description_en FROM product_seo ORDER BY sku').all();
+    return json({ ok: true, items: r.results || [] });
+  }
+  if (route === '/seo/products' && method === 'POST') {
+    if (!(await checkAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
+    let body;
+    try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+    const items = body && body.items;
+    if (!Array.isArray(items) || !items.length || items.length > 300)
+      return json({ error: 'items array 1..300 required' }, 400);
+    await ensureProductSeo(env);
+    const stmts = [];
+    for (const it of items) {
+      const sku = String((it && it.sku) || '').trim().slice(0, 80);
+      if (!sku) continue;
+      const name_en = String(it.name_en || '').trim().slice(0, 120);
+      const slug = String(it.slug || '').trim().toLowerCase().slice(0, 80);
+      const description_en = String(it.description_en || '').trim().slice(0, 300);
+      stmts.push(env.DB.prepare(
+        "INSERT INTO product_seo (sku, name_en, slug, description_en, updated_at) VALUES (?, ?, ?, ?, datetime('now')) " +
+        "ON CONFLICT(sku) DO UPDATE SET name_en=excluded.name_en, slug=excluded.slug, " +
+        "description_en=excluded.description_en, updated_at=excluded.updated_at"
+      ).bind(sku, name_en, slug, description_en));
+    }
+    if (stmts.length) await env.DB.batch(stmts);
+    return json({ ok: true, saved: stmts.length });
+  }
+  return null;
+}
+
 export default {
   async fetch(request, env) {
     const { method } = request;
@@ -1062,6 +1359,30 @@ export default {
       });
     }
 
+    // 2026-11-22 SEO 落地页：必须在静态资源放行之前拦截。
+    // CF Workers Static Assets 的路由优先级：Worker 先跑，只有 Worker 放行才查 assets。
+    // 路径用 /p/ /c/ 全新前缀，绝不与现有页面（/products /privacy）冲突。
+    if (method === 'GET' || method === 'HEAD') {
+      try {
+        if (path === '/sitemap.xml' || path === '/sitemap') {
+          const r = await renderSitemap(env);
+          return method === 'HEAD' ? new Response(null, { status: 200, headers: r.headers }) : r;
+        }
+        const pm = path.match(/^\/p\/([^\/]+)\/?$/);
+        if (pm) {
+          const r = await renderProductPage(env, decodeURIComponent(pm[1]));
+          if (r) return method === 'HEAD' ? new Response(null, { status: 200, headers: r.headers }) : r;
+        }
+        const cm = path.match(/^\/c\/([^\/]+)\/?$/);
+        if (cm) {
+          const r = await renderCategoryPage(env, decodeURIComponent(cm[1]));
+          if (r) return method === 'HEAD' ? new Response(null, { status: 200, headers: r.headers }) : r;
+        }
+      } catch (e) {
+        // SEO 页渲染失败绝不影响主站：放行给静态资源/原有逻辑
+      }
+    }
+
     // 静态资源放行 + 补 CORS：产品图要给「色点取色编辑器」用 canvas 读像素，
     // 没有 Access-Control-Allow-Origin 时 img 能显示但画布被污染，getImageData 全 0。
     if (!path.startsWith('/api/')) {
@@ -1075,6 +1396,12 @@ export default {
       return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
     }
     const route = path.slice(4); // after /api
+
+    // 2026-11-22 SEO 文案 API（独立 product_seo 表，不碰 products）
+    if (route === '/seo/products' && (method === 'GET' || method === 'POST')) {
+      const r = await handleSeoApi(env, request, route, method);
+      if (r) return r;
+    }
 
     // —— 管理登录校验（公开：登录本身就是换取校验结果）——
     // ⚠️ 登录页本体是静态文件 site/admin.html：CF 的 assets 层在 Worker 之前处理
