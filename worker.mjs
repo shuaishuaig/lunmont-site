@@ -5,7 +5,7 @@
 // 关键：门禁在服务端 —— 所有写接口不论走哪个前端都先过 checkAdmin，
 // 前端登录只决定「能不能拿到输入框」，绝不承担鉴权职责。
 
-// build-tag: 2026-11-13 admin-login-v1 taxonomy-v5 shop-checkout-v1 tier-cust-v1b
+// build-tag: 2026-11-14 reg-name-default
 const MAX_IMAGE = 700000; // dataURL char cap, keeps request body < 1MiB
 const MAX_CONTENT_VALUE = 4000;
 
@@ -288,7 +288,7 @@ const DEFAULT_CONTENT = {
   'contact_kicker': 'CONTACT',
   'contact_title': '欢迎来样订制与批发合作',
   'contact_sub': '义乌市玥岑进出口有限公司 · 浙江义乌',
-  'contact_email': 'info@lunmont.asia',
+  'contact_email': 'info@lunmont.com',
   'footer_left': '© 2026 LUNMONT · 义乌市玥岑进出口有限公司',
   'footer_right': 'HAIR ACCESSORIES WHOLESALE',
   'filter_all': '全部',
@@ -313,6 +313,7 @@ async function ensureStyles(env) {
 }
 
 // products 迁移（只做一次，用 settings 标记位判定，避免每次冷启动都跑）。
+// schema 版本沿革：taxonomy-v5（分类四列）→ products_v6（price）→ shop-checkout-v1（商城）。
 // 版本号 = PRODUCTS_MIGRATION_KEY：每次要给 products 加列都必须升版本，
 // 否则标记已存在 → 补列被跳过 → SELECT 新列报错 → 被 catch 成空数组（产品区整块消失且静默）。
 // 步骤：建表 → 补列 → 按 productKey 回填 ukey → 尽力建唯一索引。
@@ -1048,6 +1049,19 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
+    // 2026-11-22 SEO：规范域归一到 www.lunmont.com（Google 只索引一个域，消除三域重复内容）
+    // 只在入口做 301，不碰静态资源 / API 逻辑，后台编辑功能完全不变。
+    // workers.dev 调试域保留放行（内部用，不进 sitemap）。
+    const host = (url.hostname || '').toLowerCase();
+    if (host === 'lunmont.com' || host === 'lunmont.asia') {
+      const canonical = new URL(request.url);
+      canonical.hostname = 'www.lunmont.com';
+      return new Response(null, {
+        status: 301,
+        headers: { 'Location': canonical.toString(), 'Cache-Control': 'public, max-age=3600' }
+      });
+    }
+
     // 静态资源放行 + 补 CORS：产品图要给「色点取色编辑器」用 canvas 读像素，
     // 没有 Access-Control-Allow-Origin 时 img 能显示但画布被污染，getImageData 全 0。
     if (!path.startsWith('/api/')) {
@@ -1343,10 +1357,10 @@ export default {
         let body; try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
         const email = cleanEmail(body && body.email);
         const pass = String((body && body.password) || '');
-        const name = String((body && body.name) || '').trim().slice(0, 120);
+        let name = String((body && body.name) || '').trim().slice(0, 120);
         if (!email) return json({ error: 'valid email required' }, 400);
         if (pass.length < 8 || pass.length > 200) return json({ error: 'password 8-200 chars' }, 400);
-        if (!name) return json({ error: 'name required' }, 400);
+        if (!name) name = ((email && email.split('@')[0]) || '客户').slice(0, 120);
         const exist = await env.DB.prepare('SELECT id FROM customers WHERE email=?').bind(email).first();
         if (exist) return json({ error: 'email already registered' }, 409);
         try {
@@ -1701,12 +1715,12 @@ export default {
         try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
         const email = cleanEmail(body && body.email);
         const pass = String((body && body.password) || '');
-        const name = String((body && body.name) || '').trim().slice(0, 120);
+        let name = String((body && body.name) || '').trim().slice(0, 120);
         const tier = TIERS.indexOf(String((body && body.tier) || '')) >= 0
           ? String(body.tier) : 'retail';
         if (!email) return json({ error: 'valid email required' }, 400);
         if (pass.length < 8 || pass.length > 200) return json({ error: 'password 8-200 chars' }, 400);
-        if (!name) return json({ error: 'name required' }, 400);
+        if (!name) name = ((email && email.split('@')[0]) || '客户').slice(0, 120);
         const exist = await env.DB.prepare('SELECT id FROM customers WHERE email=?').bind(email).first();
         if (exist) return json({ error: 'email already registered' }, 409);
         try {
