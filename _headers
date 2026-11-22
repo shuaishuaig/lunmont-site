@@ -1,3 +1,14 @@
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
+
+# 商品图可被后台替换（换首图/改图），故不用 immutable；1 天缓存 + 边缘重验证，
+# 兼顾重复访问性能与换图后 24h 内可见（换图走 CF Purge 立即生效）。
+/assets/*
+  Cache-Control: public, max-age=86400
+
+/themes/*
+  Cache-Control: public, max-age=86400
+
+/favicon.ico
+  Cache-Control: public, max-age=86400
