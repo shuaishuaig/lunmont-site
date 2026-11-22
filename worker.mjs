@@ -120,7 +120,45 @@ const VERSIONS_SCHEMA = `CREATE TABLE IF NOT EXISTS content_versions (
   created_at TEXT DEFAULT (datetime('now'))
 )`;
 const PAGE = 'home';
-const LOCALE = 'zh';
+// 'base' = 历史单语主表（site_content），保持兼容：老工具不传 lang 时行为完全不变。
+// en/zh/ru = 独立 i18n 行，编辑某语言绝不覆盖其它语言或主表原文。
+const LOCALE = 'base';
+const LOCALES = ['en', 'zh', 'ru'];
+const I18N_SCHEMA = `CREATE TABLE IF NOT EXISTS site_content_i18n (
+  locale TEXT NOT NULL,
+  key TEXT NOT NULL,
+  value TEXT NOT NULL DEFAULT '',
+  updated_at TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (locale, key)
+)`;
+let i18nReady = false;
+async function ensureI18n(env) {
+  if (i18nReady) return;
+  await env.DB.prepare(I18N_SCHEMA).run();
+  i18nReady = true;
+}
+function localeOf(request) {
+  try {
+    const u = new URL(request.url);
+    const v = String(u.searchParams.get('lang') || u.searchParams.get('locale') || '').toLowerCase().trim();
+    if (LOCALES.indexOf(v) >= 0) return v;
+    if (v === 'base') return 'base';
+  } catch (e) {}
+  return LOCALE;
+}
+// 老数据多是「English / 中文」同行存放；没有该语言行时按此拆分兜底，
+// 不写回主表、不改历史数据，只用于展示与编辑器的初始值。
+function deriveLocaleValue(v, loc) {
+  if (loc === 'base' || typeof v !== 'string') return v;
+  const parts = v.split(/\s*\/\s*/).map(s => s.trim()).filter(Boolean);
+  if (parts.length < 2) return v;
+  const cjk = /[\u4e00-\u9fff]/;
+  let en = parts[0], zh = parts[parts.length - 1];
+  if (cjk.test(en) && !cjk.test(zh)) { const t = en; en = zh; zh = t; }
+  if (loc === 'zh') return cjk.test(zh) ? zh : zh;
+  if (loc === 'ru') return en;         // 暂无俄语源，回退英文，绝不编造译文
+  return en;
+}
 
 // 草稿：一份「未发布」的完整内容快照，按 page+locale 只存一行。
 // 存草稿绝不写 site_content、绝不发版；只有 /content/publish 才把草稿写回线上并留版本。
@@ -950,11 +988,18 @@ async function ensureContent(env) {
   contentReady = true;
 }
 
-async function readContentMap(env) {
+async function readContentMap(env, locale = LOCALE) {
   await ensureContent(env);
   const r = await env.DB.prepare('SELECT key, value FROM site_content').all();
+  const base = {};
+  for (const row of (r.results || [])) base[row.key] = row.value;
+  if (locale === LOCALE) return base;
+  await ensureI18n(env);
+  const ir = await env.DB.prepare('SELECT key, value FROM site_content_i18n WHERE locale=?')
+    .bind(locale).all();
   const c = {};
-  for (const row of (r.results || [])) c[row.key] = row.value;
+  for (const k of Object.keys(base)) c[k] = deriveLocaleValue(base[k], locale);
+  for (const row of (ir.results || [])) c[row.key] = row.value;  // 已保存的译文优先
   return c;
 }
 
@@ -965,18 +1010,18 @@ function sameContent(a, b) {
   return ka.every((k, i) => k === kb[i] && a[k] === b[k]);
 }
 
-async function saveVersion(env, content, note) {
+async function saveVersion(env, content, note, locale = LOCALE) {
   await env.DB.prepare(VERSIONS_SCHEMA).run();
   const r = await env.DB.prepare(
     'SELECT COALESCE(MAX(version), 0) AS v FROM content_versions WHERE page=? AND locale=?'
-  ).bind(PAGE, LOCALE).first();
+  ).bind(PAGE, locale).first();
   const v = ((r && r.v) || 0) + 1;
   await env.DB.prepare(
     'INSERT INTO content_versions (page, locale, version, content_json, note, created_by) VALUES (?, ?, ?, ?, ?, ?)'
-  ).bind(PAGE, LOCALE, v, JSON.stringify(content), String(note || '').slice(0, 120), 'admin').run();
+  ).bind(PAGE, locale, v, JSON.stringify(content), String(note || '').slice(0, 120), 'admin').run();
   if (v > 120) {
     await env.DB.prepare('DELETE FROM content_versions WHERE page=? AND locale=? AND version<=?')
-      .bind(PAGE, LOCALE, v - 120).run();
+      .bind(PAGE, locale, v - 120).run();
   }
   return v;
 }
@@ -1033,24 +1078,32 @@ function cleanStyles(input) {
   return out;
 }
 
-async function readDraft(env) {
+async function readDraft(env, locale = LOCALE) {
   await env.DB.prepare(DRAFT_SCHEMA).run();
   const row = await env.DB.prepare(
     'SELECT content_json, note, updated_at FROM content_drafts WHERE page=? AND locale=?'
-  ).bind(PAGE, LOCALE).first();
+  ).bind(PAGE, locale).first();
   if (!row) return null;
   let content = {};
   try { content = JSON.parse(row.content_json) || {}; } catch { return null; }
   return { content, note: row.note || '', updated_at: row.updated_at || '' };
 }
 
-async function writeContentMap(env, c) {
+async function writeContentMap(env, c, locale = LOCALE) {
   const keys = Object.keys(c);
-  const sql = `INSERT INTO site_content (key, value, updated_at) VALUES ` +
-    keys.map(() => "(?, ?, datetime('now'))").join(', ') +
-    ` ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`;
+  if (!keys.length) return;
+  if (locale !== LOCALE) await ensureI18n(env);
+  const table = locale === LOCALE ? 'site_content' : 'site_content_i18n';
+  const sql = `INSERT INTO ${table} (` + (locale === LOCALE ? 'key' : 'locale, key') +
+    `, value, updated_at) VALUES ` +
+    keys.map(() => (locale === LOCALE ? '(?, ?, datetime(\'now\'))' : '(?, ?, ?, datetime(\'now\'))')).join(', ') +
+    ` ON CONFLICT(${locale === LOCALE ? 'key' : 'locale, key'}) DO UPDATE SET ` +
+    `value=excluded.value, updated_at=excluded.updated_at`;
   const params = [];
-  for (const k of keys) params.push(k, c[k].slice(0, MAX_CONTENT_VALUE));
+  for (const k of keys) {
+    if (locale !== LOCALE) params.push(locale);
+    params.push(k, c[k].slice(0, MAX_CONTENT_VALUE));
+  }
   await env.DB.prepare(sql).bind(...params).run();
 }
 
@@ -1549,11 +1602,9 @@ export default {
 
     if (route === '/content' && method === 'GET') {
       try {
-        await ensureContent(env);
-        const r = await env.DB.prepare('SELECT key, value FROM site_content').all();
-        const content = {};
-        for (const row of (r.results || [])) content[row.key] = row.value;
-        return json({ content });
+        const loc = localeOf(request);
+        const content = await readContentMap(env, loc);
+        return json({ content, locale: loc, locales: LOCALES });
       } catch (e) {
         return json({ content: {}, detail: String(e && e.message || e).slice(0, 120) });
       }
@@ -1600,11 +1651,12 @@ export default {
       // 历史文案不对外公开，仅管理模式可查
       if (!(await checkAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
       try {
+        const loc = localeOf(request);
         await env.DB.prepare(VERSIONS_SCHEMA).run();
         const r = await env.DB.prepare(
           'SELECT id, version, note, created_at, content_json FROM content_versions ' +
           'WHERE page=? AND locale=? ORDER BY version DESC LIMIT 40'
-        ).bind(PAGE, LOCALE).all();
+        ).bind(PAGE, loc).all();
         const versions = (r.results || []).map(row => {
           let content = {};
           try { content = JSON.parse(row.content_json) || {}; } catch { content = {}; }
@@ -1613,7 +1665,7 @@ export default {
             created_at: row.created_at, keys: Object.keys(content).length, content
           };
         });
-        return json({ page: PAGE, locale: LOCALE, versions });
+        return json({ page: PAGE, locale: loc, versions });
       } catch (e) {
         return json({ error: 'list failed', detail: String(e && e.message || e).slice(0, 160) }, 500);
       }
@@ -1623,8 +1675,8 @@ export default {
       // 草稿内容不对外公开，仅管理模式可查
       if (!(await checkAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
       try {
-        const draft = await readDraft(env);
-        return json({ hasDraft: !!draft, draft });
+        const draft = await readDraft(env, localeOf(request));
+        return json({ hasDraft: !!draft, draft, locale: localeOf(request) });
       } catch (e) {
         return json({ error: 'draft read failed', detail: String(e && e.message || e).slice(0, 160) }, 500);
       }
@@ -2159,6 +2211,7 @@ export default {
       const clean = cleanContentInput(body && body.content);
       if (!clean) return json({ error: 'valid content object required' }, 400);
       try {
+        const loc = localeOf(request);
         await env.DB.prepare(DRAFT_SCHEMA).run();
         await env.DB.prepare(
           `INSERT INTO content_drafts (page, locale, content_json, note, updated_at)
@@ -2166,10 +2219,10 @@ export default {
            ON CONFLICT(page, locale) DO UPDATE SET
              content_json=excluded.content_json, note=excluded.note,
              updated_at=excluded.updated_at`
-        ).bind(PAGE, LOCALE, JSON.stringify(clean),
+        ).bind(PAGE, loc, JSON.stringify(clean),
                String((body && body.note) || '').slice(0, 120) || '存为草稿').run();
         // 注意：这里绝不调用 writeContentMap / saveVersion，草稿不影响访客看到的内容
-        return json({ ok: true, hasDraft: true, keys: Object.keys(clean).length });
+        return json({ ok: true, hasDraft: true, locale: loc, keys: Object.keys(clean).length });
       } catch (e) {
         return json({ error: 'draft save failed', detail: String(e && e.message || e).slice(0, 200) }, 500);
       }
@@ -2177,10 +2230,11 @@ export default {
 
     if (route === '/content/draft' && method === 'DELETE') {
       try {
+        const loc = localeOf(request);
         await env.DB.prepare(DRAFT_SCHEMA).run();
         await env.DB.prepare('DELETE FROM content_drafts WHERE page=? AND locale=?')
-          .bind(PAGE, LOCALE).run();
-        return json({ ok: true });
+          .bind(PAGE, loc).run();
+        return json({ ok: true, locale: loc });
       } catch (e) {
         return json({ error: 'draft discard failed', detail: String(e && e.message || e).slice(0, 200) }, 500);
       }
@@ -2190,21 +2244,23 @@ export default {
       let body = {};
       try { body = await request.json(); } catch { body = {}; }
       try {
-        const draft = await readDraft(env);
+        const loc = localeOf(request);
+        const draft = await readDraft(env, loc);
         if (!draft) return json({ error: 'no draft' }, 404);
         const clean = cleanContentInput(draft.content);
         if (!clean) return json({ error: 'bad draft content' }, 500);
-        const before = await readContentMap(env);
-        await writeContentMap(env, clean);
+        const before = await readContentMap(env, loc);
+        await writeContentMap(env, clean, loc);
         const after = Object.assign({}, before, clean);
         const changed = !sameContent(before, after);
         const version = changed
           ? await saveVersion(env, after,
-              String((body && body.note) || draft.note || '').slice(0, 120) || '发布草稿')
+              String((body && body.note) || draft.note || '').slice(0, 120) || '发布草稿', loc)
           : null;
         await env.DB.prepare('DELETE FROM content_drafts WHERE page=? AND locale=?')
-          .bind(PAGE, LOCALE).run();
-        return json({ ok: true, published: Object.keys(clean).length, version, unchanged: !changed });
+          .bind(PAGE, loc).run();
+        return json({ ok: true, locale: loc, published: Object.keys(clean).length,
+                      version, unchanged: !changed });
       } catch (e) {
         return json({ error: 'publish failed', detail: String(e && e.message || e).slice(0, 200) }, 500);
       }
@@ -2216,10 +2272,11 @@ export default {
       const v = Number(body && body.version);
       if (!Number.isInteger(v) || v <= 0) return json({ error: 'version required' }, 400);
       try {
+        const loc = localeOf(request);
         await env.DB.prepare(VERSIONS_SCHEMA).run();
         const row = await env.DB.prepare(
           'SELECT content_json FROM content_versions WHERE page=? AND locale=? AND version=?'
-        ).bind(PAGE, LOCALE, v).first();
+        ).bind(PAGE, loc, v).first();
         if (!row) return json({ error: 'version not found' }, 404);
         let old = {};
         try { old = JSON.parse(row.content_json) || {}; } catch { return json({ error: 'bad snapshot' }, 500); }
@@ -2231,13 +2288,13 @@ export default {
         }
         const clean = {};
         for (const k of keys) clean[k] = old[k].slice(0, MAX_CONTENT_VALUE);
-        const before = await readContentMap(env);
-        await writeContentMap(env, clean);
+        const before = await readContentMap(env, loc);
+        await writeContentMap(env, clean, loc);
         const changed = !sameContent(before, clean);
         const newV = changed
-          ? await saveVersion(env, clean, '回滚到 v' + v)
+          ? await saveVersion(env, clean, '回滚到 v' + v, loc)
           : null;
-        return json({ ok: true, restoredFrom: v, version: newV, unchanged: !changed });
+        return json({ ok: true, locale: loc, restoredFrom: v, version: newV, unchanged: !changed });
       } catch (e) {
         return json({ error: 'rollback failed', detail: String(e && e.message || e).slice(0, 200) }, 500);
       }
@@ -2294,7 +2351,7 @@ export default {
         model: cfg.ai_model || 'deepseek-chat',
         messages: [
           { role: 'system', content: AI_SYS_PROMPT },
-          { role: 'user', content: JSON.stringify({ page: PAGE, locale: LOCALE, globalHint, fields: marks }) }
+          { role: 'user', content: JSON.stringify({ page: PAGE, locale: localeOf(request), globalHint, fields: marks }) }
         ],
         temperature: 0.7,
         max_tokens: 2400
@@ -2346,17 +2403,18 @@ export default {
         if (typeof c[k] !== 'string') return json({ error: 'invalid value: ' + k }, 400);
       }
       try {
+        const loc = localeOf(request);
         const clean = {};
         for (const k of keys) clean[k] = c[k].slice(0, MAX_CONTENT_VALUE);
-        const before = await readContentMap(env);
-        await writeContentMap(env, clean);
+        const before = await readContentMap(env, loc);
+        await writeContentMap(env, clean, loc);
         // 保存前是整个 live 快照，保存后是 before 叠加本次字段；内容没变就不涨版本
         const after = Object.assign({}, before, clean);
         const changed = !sameContent(before, after);
         const version = changed
-          ? await saveVersion(env, after, String((body && body.note) || '').slice(0, 120) || '保存文案')
+          ? await saveVersion(env, after, String((body && body.note) || '').slice(0, 120) || '保存文案', loc)
           : null;
-        return json({ ok: true, saved: keys.length, version, unchanged: !changed });
+        return json({ ok: true, locale: loc, saved: keys.length, version, unchanged: !changed });
       } catch (e) {
         return json({ error: 'save failed', detail: String(e && e.message || e).slice(0, 200) }, 500);
       }
