@@ -1161,18 +1161,30 @@ function absImage(img) {
   return s;
 }
 
-function seoPageHead(title, desc, canonical, extraSchema) {
+function seoPageHead(title, desc, canonical, extraSchema, opts) {
+  // 2026-11-23 SEO 补齐：og 完整套件（og:image/site_name/locale）+ twitter:image + robots 显式声明。
+  // opts: { ogImage, ogType } —— PDP 用 product + 产品图，分类页用 first 产品图。
+  const o = opts || {};
+  const ogImg = o.ogImage
+    ? '<meta property="og:image" content="' + escHtml(o.ogImage) + '">\n' +
+      '<meta property="og:image:alt" content="' + escHtml(o.ogImageAlt || title) + '">\n' +
+      '<meta name="twitter:image" content="' + escHtml(o.ogImage) + '">\n'
+    : '';
   return '<!doctype html>\n<html lang="en">\n<head>\n' +
     '<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n' +
+    '<meta name="robots" content="index,follow">\n' +
     '<title>' + escHtml(title) + '</title>\n' +
     '<meta name="description" content="' + escHtml(desc) + '">\n' +
     '<link rel="canonical" href="' + escHtml(canonical) + '">\n' +
     '<link rel="alternate" hreflang="en" href="' + escHtml(canonical) + '">\n' +
     '<link rel="alternate" hreflang="x-default" href="' + escHtml(canonical) + '">\n' +
-    '<meta property="og:type" content="website">\n' +
+    '<meta property="og:type" content="' + escHtml(o.ogType || 'website') + '">\n' +
+    '<meta property="og:site_name" content="LUNMONT">\n' +
+    '<meta property="og:locale" content="en_US">\n' +
     '<meta property="og:title" content="' + escHtml(title) + '">\n' +
     '<meta property="og:description" content="' + escHtml(desc) + '">\n' +
     '<meta property="og:url" content="' + escHtml(canonical) + '">\n' +
+    ogImg +
     '<meta name="twitter:card" content="summary_large_image">\n' +
     '<script type="application/ld+json">' + JSON.stringify(extraSchema) + '</script>\n' +
     '<style>' +
@@ -1192,6 +1204,7 @@ function seoPageHead(title, desc, canonical, extraSchema) {
     '.card{border:1px solid #e7e1d8;padding:12px;text-decoration:none;color:inherit;display:block}' +
     '.card img{width:100%;aspect-ratio:1;object-fit:cover;background:#f4efe7}' +
     '.card h3{font-size:14px;margin:10px 0 0;line-height:1.4}' +
+    '.faq{border-bottom:1px solid #e7e1d8;padding:14px 0}.faq h3{font-size:16px;margin:0 0 6px}.faq p{margin:0;color:#3d3a35}' +
     'footer{border-top:1px solid #e7e1d8;padding:28px 6vw;font-size:13px;color:#7d7770;text-align:center}' +
     '</style></head>\n<body>' +
     '<nav><a class="logo" href="/">LUNMONT</a><a href="/">Home</a><a href="/#products">Products</a><a href="/#contact">Contact</a></nav>\n<main>';
@@ -1234,6 +1247,30 @@ async function renderProductPage(env, slug) {
   const cat = catI18n(p.category);
   const nameEn = (seo && seo.name_en) || String(p.name || '');
   const img = absImage(p.image);
+  const specs = [];
+  if (p.sku) specs.push(['SKU', escHtml(p.sku)]);
+  if (p.material) specs.push(['Material', escHtml(p.material)]);
+  if (p.size_type) specs.push(['Size', escHtml(p.size_type)]);
+  if (p.styles) specs.push(['Style', escHtml(String(p.styles).replace(/,/g, ', '))]);
+  if (p.family) specs.push(['Collection', escHtml(p.family)]);
+  if (p.category) specs.push(['Category', escHtml(cat.en)]);
+  const specHtml = specs.length
+    ? '<h2>Key Specifications</h2><table>' + specs.map(r => '<tr><th>' + r[0] + '</th><td>' + r[1] + '</td></tr>').join('') + '</table>'
+    : '';
+  // 2026-11-23 SEO 补齐：应用场景 + FAQ（与 FAQPage Schema 一致，内容真实可核验）
+  const catLower = cat.en.toLowerCase();
+  const faqs = [
+    ['What is the MOQ for ' + catLower + ' like ' + nameEn + '?',
+     'We support small-batch trial orders. Please contact us with your target quantity and we will confirm the exact MOQ and price for SKU ' + (p.sku || nameEn) + '.'],
+    ['Do you offer custom colors or designs for this product?',
+     'Yes. Custom colors, finishes and packaging can be discussed. Send reference images or a specification with your inquiry and we will confirm feasibility and any additional cost before production.'],
+    ['How do you ship orders from China?',
+     'We export from Yiwu, Zhejiang, China and can quote based on your destination port or door address by sea, air or express. Shipping method, lead time and documents are confirmed per order.'],
+    ['Can I get a sample before placing a bulk order?',
+     'Yes. Sample confirmation of color, material and finish is part of our standard order flow before bulk production.']
+  ];
+  const faqHtml = '<h2>FAQ</h2>' + faqs.map(f =>
+    '<div class="faq"><h3>' + escHtml(f[0]) + '</h3><p>' + escHtml(f[1]) + '</p></div>').join('');
   const schema = {
     '@context': 'https://schema.org', '@graph': [
       { '@type': 'Product', '@id': canonical + '#product', name: nameEn,
@@ -1246,32 +1283,50 @@ async function renderProductPage(env, slug) {
         { '@type': 'ListItem', position: 1, name: 'Home', item: SEO_ORIGIN + '/' },
         { '@type': 'ListItem', position: 2, name: cat.en, item: SEO_ORIGIN + '/c/' + cat.slug + '/' },
         { '@type': 'ListItem', position: 3, name: nameEn, item: canonical }
-      ] }
+      ] },
+      { '@type': 'FAQPage', '@id': canonical + '#faq', mainEntity: faqs.map(f => ({
+        '@type': 'Question', name: f[0],
+        acceptedAnswer: { '@type': 'Answer', text: f[1] } })) }
     ]
   };
-  const specs = [];
-  if (p.sku) specs.push(['SKU', escHtml(p.sku)]);
-  if (p.material) specs.push(['Material', escHtml(p.material)]);
-  if (p.size_type) specs.push(['Size', escHtml(p.size_type)]);
-  if (p.styles) specs.push(['Style', escHtml(String(p.styles).replace(/,/g, ', '))]);
-  if (p.family) specs.push(['Collection', escHtml(p.family)]);
-  if (p.category) specs.push(['Category', escHtml(cat.en)]);
-  const specHtml = specs.length
-    ? '<h2>Key Specifications</h2><table>' + specs.map(r => '<tr><th>' + r[0] + '</th><td>' + r[1] + '</td></tr>').join('') + '</table>'
-    : '';
+  // 2026-11-23 SEO 补齐：相关产品（同分类其它 SKU，内链 + 页面厚度）
+  let relatedHtml = '';
+  try {
+    const rel = await env.DB.prepare(
+      'SELECT id, name, image, sku FROM products WHERE category=? AND id<>? AND image IS NOT NULL AND image<>\'\' ORDER BY id DESC LIMIT 4'
+    ).bind(p.category, p.id).all();
+    const relSeo = await env.DB.prepare('SELECT sku, slug, name_en FROM product_seo').all();
+    const relMap = {};
+    for (const s of (relSeo.results || [])) if (s.sku) relMap[s.sku] = s;
+    const relItems = (rel.results || []).map(r => {
+      const seoR = relMap[r.sku];
+      const rn = (seoR && seoR.name_en) || String(r.name || '');
+      const rh = '/p/' + encodeURIComponent(productSlug(r, seoR)) + '/';
+      const ri = absImage(r.image);
+      return '<a class="card" href="' + escHtml(rh) + '">' +
+        (ri ? '<img src="' + escHtml(ri) + '" alt="' + escHtml(rn) + '" loading="lazy">' : '') +
+        '<h3>' + escHtml(rn) + '</h3></a>';
+    }).join('');
+    if (relItems) relatedHtml = '<h2>Related Products</h2><div class="grid">' + relItems + '</div>';
+  } catch (e) { /* 相关产品失败不影响主页面 */ }
   const body =
     crumb([{ name: 'Home', href: '/' }, { name: cat.en, href: '/c/' + cat.slug + '/' }, { name: nameEn }]) +
     '<h1>' + escHtml(nameEn) + '</h1>' +
     '<p class="sub">' + escHtml(cat.en) + (p.sku ? ' · SKU ' + escHtml(p.sku) : '') + ' · Wholesale &amp; Custom Orders</p>' +
-    (img ? '<img class="hero-img" src="' + escHtml(img) + '" alt="' + escHtml(nameEn + ' - ' + cat.en) + '">' : '') +
+    (img ? '<img class="hero-img" src="' + escHtml(img) + '" alt="' + escHtml(nameEn + ' - ' + cat.en) + '" width="1080" height="800">' : '') +
     '<h2>Product Overview</h2><p>' + escHtml(desc) + '</p>' + specHtml +
+    '<h2>Application Scenarios</h2>' +
+    '<p>This ' + escHtml(cat.en.toLowerCase()) + ' is selected by wholesalers and retailers for everyday hair styling and fashion accessory lines. ' +
+    'Common retail uses include daily wear, office and casual styling, gift and occasion collections, and salon or boutique displays. ' +
+    'For private-label buyers it works well as a staple SKU in mixed hair-accessory orders shipped from Yiwu.</p>' +
     '<h2>Wholesale &amp; Customization</h2>' +
     '<p>LUNMONT supplies hair accessories to wholesalers, retailers and distributors worldwide. ' +
     'Low minimum order quantities, custom colors and designs, and export service from Yiwu, China. ' +
     'Contact us for the latest wholesale price and lead time.</p>' +
+    faqHtml + relatedHtml +
     '<a class="cta" href="/#contact">Request a Quote</a>' +
     '<a class="cta alt" href="/c/' + cat.slug + '/">More ' + escHtml(cat.en) + '</a>';
-  return new Response(seoPageHead(title, desc, canonical, schema) + body + seoPageFoot(), {
+  return new Response(seoPageHead(title, desc, canonical, schema, { ogImage: img || undefined, ogType: 'product' }) + body + seoPageFoot(), {
     status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' }
   });
 }
@@ -1294,6 +1349,17 @@ async function renderCategoryPage(env, slug) {
   const title = ci.en + ' Manufacturer & Wholesale | LUNMONT';
   const desc = ('Wholesale ' + ci.en + ' from LUNMONT, a Yiwu hair accessories supplier. ' +
     'Browse ' + (rows.results || []).length + ' designs with low MOQ and custom options. Request a quote.').slice(0, 160);
+  // 2026-11-23 SEO 补齐：分类页 FAQ（与 FAQPage Schema 一致）
+  const catFaqs = [
+    ['Do you offer low MOQ wholesale for ' + ci.en.toLowerCase() + '?',
+     'Yes. LUNMONT supports small-batch trial orders for ' + ci.en.toLowerCase() + '. Send us the SKUs and quantities you need and we will confirm MOQ and price.'],
+    ['Can I get custom colors or private-label packaging?',
+     'Custom colors, finishes and packaging are available for ' + ci.en.toLowerCase() + '. Share reference images or specifications and we will confirm feasibility before production.'],
+    ['Where do you ship ' + ci.en.toLowerCase() + ' from?',
+     'All orders ship from Yiwu, Zhejiang, China. We can quote by sea, air or express based on your destination.'],
+    ['How do I request a quotation?',
+     'Use the contact form or WhatsApp on our homepage, or email us with item numbers, target quantity and destination port. We reply within 24 hours.']
+  ];
   const schema = {
     '@context': 'https://schema.org', '@graph': [
       { '@type': 'CollectionPage', '@id': canonical + '#page', name: ci.en, description: desc, url: canonical },
@@ -1305,9 +1371,13 @@ async function renderCategoryPage(env, slug) {
       { '@type': 'BreadcrumbList', '@id': canonical + '#breadcrumb', itemListElement: [
         { '@type': 'ListItem', position: 1, name: 'Home', item: SEO_ORIGIN + '/' },
         { '@type': 'ListItem', position: 2, name: ci.en, item: canonical }
-      ] }
+      ] },
+      { '@type': 'FAQPage', '@id': canonical + '#faq', mainEntity: catFaqs.map(f => ({
+        '@type': 'Question', name: f[0],
+        acceptedAnswer: { '@type': 'Answer', text: f[1] } })) }
     ]
   };
+  const firstImg = (rows.results || []).map(p => absImage(p.image)).filter(Boolean)[0];
   const cards = (rows.results || []).map(p => {
     const s = seoBySku[p.sku];
     const nm = (s && s.name_en) || String(p.name || '');
@@ -1327,8 +1397,10 @@ async function renderCategoryPage(env, slug) {
     '<p>LUNMONT is a Yiwu-based manufacturer and wholesale supplier of hair accessories. ' +
     'We support small-batch orders, custom designs and export shipping. Use the filters on our ' +
     'main site to narrow by style, size and color, or contact us with a SKU list for a quote.</p>' +
+    '<h2>FAQ</h2>' + catFaqs.map(f =>
+      '<div class="faq"><h3>' + escHtml(f[0]) + '</h3><p>' + escHtml(f[1]) + '</p></div>').join('') +
     '<a class="cta" href="/#contact">Request a Quote</a>';
-  return new Response(seoPageHead(title, desc, canonical, schema) + body + seoPageFoot(), {
+  return new Response(seoPageHead(title, desc, canonical, schema, { ogImage: firstImg || undefined }) + body + seoPageFoot(), {
     status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=1800' }
   });
 }
@@ -1442,7 +1514,22 @@ export default {
     if (!path.startsWith('/api/')) {
       const res = await env.ASSETS.fetch(request);
       const isImg = /\.(jpe?g|png|webp|gif|avif|svg)$/i.test(path);
-      if (!isImg) return res;
+      if (!isImg) {
+        // 2026-11-23 SEO 补齐：CF assets 未命中会返回空 body 的 404，
+        // Google 抓取到空 404 无法回收链接权重。改为回退渲染 site/404.html（状态仍 404）。
+        if (res.status === 404) {
+          try {
+            const notFoundReq = new Request(new URL('/404.html', request.url).toString(), { headers: request.headers });
+            const nf = await env.ASSETS.fetch(notFoundReq);
+            if (nf.status === 200) {
+              const h = new Headers(nf.headers);
+              h.set('Content-Type', 'text/html; charset=utf-8');
+              return new Response(nf.body, { status: 404, statusText: 'Not Found', headers: h });
+            }
+          } catch (e) { /* 回退失败则原样返回空 404 */ }
+        }
+        return res;
+      }
       const h = new Headers(res.headers);
       h.set('Access-Control-Allow-Origin', '*');
       h.set('Cross-Origin-Resource-Policy', 'cross-origin');
