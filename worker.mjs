@@ -1338,7 +1338,8 @@ async function renderSitemap(env) {
   const staticUrls = [
     ['/', 'weekly', '1.0'], ['/privacy', 'yearly', '0.3'], ['/return', 'yearly', '0.3'],
     ['/terms', 'yearly', '0.3'], ['/about', 'monthly', '0.5'],
-    ['/factory', 'monthly', '0.5'], ['/certificates', 'monthly', '0.4']
+    ['/factory', 'monthly', '0.5'], ['/certificates', 'monthly', '0.4'],
+    ['/blog', 'monthly', '0.5']  // 2026-11-23 采购指南（静态页 site/blog.html）
   ];
   let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
   for (const [u, f, pr] of staticUrls) {
