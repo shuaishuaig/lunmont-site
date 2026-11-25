@@ -347,6 +347,15 @@ const DEFAULT_CONTENT = {
   'form_msg': '询盘内容（想询价的款号、数量、目的港）',
   'form_submit': '发送询盘 Send',
   'wa_btn': 'WhatsApp 咨询',
+  // 2026-11-25 后台可编辑性：WhatsApp 号码（纯数字带国家码）不再写死在前端，
+  // 首页加载时用本键重写 wa.me 链接；改号码 = 改文案，不用发版。
+  'wa_phone': '8618268820516',
+  'foot_about': '关于我们 About',
+  'foot_factory': '工厂 Factory',
+  'foot_certificates': '资质 Certificates',
+  'foot_privacy': '隐私政策 Privacy',
+  'foot_returns': '退换货 Returns',
+  'foot_terms': '服务条款 Terms',
   'seo_title': 'LUNMONT — 发夹与饰品批发 | 义乌市玥岑进出口有限公司',
   'seo_desc': 'LUNMONT（义乌市玥岑进出口有限公司）— 发夹与饰品批发，支持小批量起订与出口订单。Yiwu Cenova Import and Export Co., Ltd.'
 };
