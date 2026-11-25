@@ -39,6 +39,16 @@ button:disabled{opacity:.55;cursor:wait}
 </form>
 <script>
 (function(){
+  // 2026-11-25：规范域 = www.lunmont.com。若从 lunmont.com / lunmont.asia 打开本页，
+  // 先整体跳到 www 同路径。否则页内所有 POST 会撞上 301 跨源重定向，
+  // 重定向响应没有 CORS 头 → fetch 直接抛"网络异常"（本次事故根因）。
+  var lh = location.hostname;
+  if (lh === 'lunmont.com' || lh === 'lunmont.asia') {
+    var ju = new URL(location.href);
+    ju.hostname = 'www.lunmont.com';
+    location.replace(ju.toString());
+    return;
+  }
   var form = document.getElementById('loginForm');
   var input = document.getElementById('key');
   var go = document.getElementById('go');
