@@ -337,7 +337,7 @@ const DEFAULT_CONTENT = {
   'contact_kicker': 'CONTACT',
   'contact_title': '欢迎来样订制与批发合作',
   'contact_sub': '义乌市玥岑进出口有限公司 · 浙江义乌',
-  'contact_email': 'info@lunmont.com',
+  'contact_email': 'lunmontfa@gmail.com',
   'footer_left': '© 2026 LUNMONT · 义乌市玥岑进出口有限公司',
   'footer_right': 'HAIR ACCESSORIES WHOLESALE',
   'filter_all': '全部',
