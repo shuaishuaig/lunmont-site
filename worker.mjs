@@ -1475,8 +1475,11 @@ export default {
     // 2026-11-22 SEO：规范域归一到 www.lunmont.com（Google 只索引一个域，消除三域重复内容）
     // 只在入口做 301，不碰静态资源 / API 逻辑，后台编辑功能完全不变。
     // workers.dev 调试域保留放行（内部用，不进 sitemap）。
+    // 2026-11-25 修复：301 只重定向 GET/HEAD。POST 走 301 会跨源（lunmont.com→www），
+    // 重定向响应无 CORS 头 → 浏览器 fetch 直接抛网络错误（admin 登录"网络异常"根因）。
+    // POST/PUT 等 API 请求不会被搜索引擎索引，放行不重定向无 SEO 损失。
     const host = (url.hostname || '').toLowerCase();
-    if (host === 'lunmont.com' || host === 'lunmont.asia') {
+    if ((method === 'GET' || method === 'HEAD') && (host === 'lunmont.com' || host === 'lunmont.asia')) {
       const canonical = new URL(request.url);
       canonical.hostname = 'www.lunmont.com';
       return new Response(null, {
