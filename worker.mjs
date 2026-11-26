@@ -142,11 +142,13 @@ function cleanLayout(raw) {
     const type = String(blk.type || '');
     const allowed = LAYOUT_TYPES[type];
     if (!allowed) return null;
+    // 字段是嵌套对象 {type, fields:{title:…}}（与前端 draftLayout.custom 同形）
+    const fieldsIn = blk.fields && typeof blk.fields === 'object' && !Array.isArray(blk.fields)
+      ? blk.fields : {};
     const fields = {};
-    for (const f of Object.keys(blk)) {
-      if (f === 'type') continue;
+    for (const f of Object.keys(fieldsIn)) {
       if (allowed.indexOf(f) < 0) return null;   // 多余字段直接拒绝，防止塞任意数据
-      const v = String(blk[f] == null ? '' : blk[f]).slice(0, f === 'link' ? 300 : 600);
+      const v = String(fieldsIn[f] == null ? '' : fieldsIn[f]).slice(0, f === 'link' ? 300 : 600);
       if (f === 'link' && v && !/^(https:\/\/[^\s"]+|\/[^\s"]*|#[\w-]{1,60})$/.test(v)) return null;
       fields[f] = v;
     }
