@@ -147,7 +147,7 @@ function cleanLayout(raw) {
       if (f === 'type') continue;
       if (allowed.indexOf(f) < 0) return null;   // 多余字段直接拒绝，防止塞任意数据
       const v = String(blk[f] == null ? '' : blk[f]).slice(0, f === 'link' ? 300 : 600);
-      if (f === 'link' && v && !/^(https:\/\/[^\s"]+|\/[^\s"]*)$/.test(v)) return null;
+      if (f === 'link' && v && !/^(https:\/\/[^\s"]+|\/[^\s"]*|#[\w-]{1,60})$/.test(v)) return null;
       fields[f] = v;
     }
     outCustom[id] = { type, fields };
