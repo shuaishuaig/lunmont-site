@@ -1702,7 +1702,23 @@ export default {
                         detail: String(e && e.message || e).slice(0, 160) };
         }
       }
+      // 前台展示开关(2026-11-26):hide_names=1 时首页产品卡只显示图片不显示名称
+      out.display = { hideNames: (await readSetting(env, 'hide_names')) === '1' };
       return json(out);
+    }
+
+    if (route === '/display' && method === 'GET') {
+      // 公开可读:前台渲染时查询;只回布尔展示开关,无敏感信息
+      return json({ hideNames: (await readSetting(env, 'hide_names')) === '1' });
+    }
+    if (route === '/display' && method === 'POST') {
+      if (!(await checkAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
+      let body; try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+      const v = body && body.hideNames ? '1' : '0';
+      await env.DB.prepare(
+        "INSERT INTO settings (key, value) VALUES ('hide_names', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+      ).bind(v).run();
+      return json({ ok: true, hideNames: v === '1' });
     }
 
     if (route === '/content' && method === 'GET') {
