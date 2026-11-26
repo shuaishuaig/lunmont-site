@@ -44,9 +44,13 @@ const PRODUCTS_DDL = [
   "ALTER TABLE products ADD COLUMN styles TEXT DEFAULT ''",
   "ALTER TABLE products ADD COLUMN family TEXT DEFAULT ''",
   // 商城价格（USD，两位小数用 REAL 存）。0 = 未定价（前端显示「询价」，购物车拒加）。
-  "ALTER TABLE products ADD COLUMN price REAL DEFAULT 0"
+  "ALTER TABLE products ADD COLUMN price REAL DEFAULT 0",
+  // 批发档价格：/products/prices 与批发客价格覆盖都写读此列，
+  // 但历史迁移从未建过它（products_v6 只加了 price）→ D1_ERROR: no such column。
+  // 必须补进 DDL 并 bump 迁移键，否则老库永远缺列（2026-11-26 修复）。
+  "ALTER TABLE products ADD COLUMN price_wholesale REAL DEFAULT 0"
 ];
-const PRODUCTS_MIGRATION_KEY = 'products_v6';
+const PRODUCTS_MIGRATION_KEY = 'products_v7';
 let productsReady = false;
 
 // 稳定业务键：有 sku 用 sku（产品改了名/换了图也认得出来），否则用 名称+分类。
@@ -397,7 +401,8 @@ async function ensureProducts(env) {
   const cols = rows.length ? Object.keys(rows[0]) : [];
   if (rows.length) {
     for (const need of ['updated_at', 'parent_sku', 'color', 'color2', 'pattern',
-                        'material', 'size_type', 'styles', 'family', 'price']) {
+                        'material', 'size_type', 'styles', 'family', 'price',
+                        'price_wholesale']) {
       if (cols.indexOf(need) < 0) throw new Error('products migration incomplete: missing column ' + need);
     }
   }
@@ -1588,7 +1593,7 @@ export default {
       try {
         const r = await env.DB.prepare(
           'SELECT id, name, category, image, sku, parent_sku, color, color2, pattern, ' +
-          'material, size_type, styles, family, price ' +
+          'material, size_type, styles, family, price, price_wholesale ' +
           'FROM products ORDER BY id DESC LIMIT 500'
         ).all();
         rows = r.results || [];
