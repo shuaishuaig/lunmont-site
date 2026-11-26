@@ -2700,6 +2700,36 @@ export default {
       }
     }
 
+    // —— K5 拍立得：访客可读，管理模式可改（存 settings.snaps，JSON 数组 ≤4 张）
+    if (route === '/snaps' && method === 'GET') {
+      try {
+        const r = await env.DB.prepare("SELECT value FROM settings WHERE key='snaps'").first();
+        let snaps = [];
+        if (r && r.value) { try { snaps = JSON.parse(r.value); } catch (e) { snaps = []; } }
+        return json({ snaps: Array.isArray(snaps) ? snaps.slice(0, 4) : [] });
+      } catch (e) { return json({ snaps: [] }); }
+    }
+    if (route === '/snaps' && method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+      const list = Array.isArray(body && body.snaps) ? body.snaps.slice(0, 4) : null;
+      if (!list) return json({ error: 'invalid snaps' }, 400);
+      for (const s of list) {
+        const img = String((s && s.img) || '');
+        if (!/^data:image\/(jpeg|png|webp);base64,/.test(img) || img.length > MAX_IMAGE)
+          return json({ error: 'invalid image' }, 400);
+        s.cap = String((s && s.cap) || '').slice(0, 60);
+      }
+      try {
+        await env.DB.prepare(
+          "INSERT INTO settings (key, value) VALUES ('snaps', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+        ).bind(JSON.stringify(list)).run();
+        return json({ ok: true, count: list.length });
+      } catch (e) {
+        return json({ error: 'save failed', detail: String(e && e.message || e).slice(0, 120) }, 500);
+      }
+    }
+
     // 按 id 批量改价（零售价 / 批发价）。**只动价格，绝不碰 name/category/image/ukey**：
     // 走 /products/batch 会把 ukey 重算、还可能把整行字段用 0 覆盖掉，改价绝不能借道那条路。
     // items: [{ id, price?, price_wholesale? }]，两个字段至少给一个，缺省=不改。
