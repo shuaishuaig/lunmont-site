@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<!-- build-tag: 2026-11-26 i18n-k5-snaps-stats-20261126 -->
+<!-- build-tag: 2026-11-26 layout-blocks-facets -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hair Clips & Hair Accessories Manufacturer | LUNMONT</title>
 <meta name="description" content="LUNMONT is a Yiwu hair clip and hair accessories manufacturer offering acetate clips, claw clips and custom wholesale orders with low MOQ. Request a quote today.">
@@ -330,6 +330,10 @@
   .ct-item.on{background:#332419;color:var(--ink);border-left-color:var(--accent);font-weight:600}
   .ct-item .n{font-size:10.5px;color:#b3a894;font-variant-numeric:tabular-nums;flex:0 0 auto;margin-left:8px}
   .ct-item.on .n{color:var(--accent)}
+  .ct-lp{margin-left:5px;color:#d8a441;text-decoration:none;font-size:11px}
+  .ct-lp:hover{text-decoration:underline}
+  .ct-wrap{display:flex;align-items:center}
+  .ct-wrap .ct-item{flex:1;min-width:0}
   .ct-item .sw{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:8px;
     box-shadow:inset 0 0 0 1px rgba(0,0,0,.13);flex:0 0 auto;vertical-align:-1px}
   .ct-sub{padding-left:10px}
@@ -554,6 +558,71 @@ body.has-snaps .hero .cap h1{font-size:clamp(28px,3vw,40px);line-height:1.32}
   .snaps{height:340px}
   .snap{padding:7px 7px 22px}
 }
+
+/* ================= 2026-11-26 区块布局：自定义区块 + 布局面板 ================= */
+.cx-cta{background:#241a15;color:var(--ink);padding:9vh 6vw;text-align:center}
+.cx-cta .k{font-size:12px;letter-spacing:.4em;color:#d8a441;text-transform:uppercase}
+.cx-cta h2{font-size:clamp(24px,4vw,40px);margin:14px 0 10px;letter-spacing:.04em}
+.cx-cta p{color:var(--muted);font-size:15px;max-width:640px;margin:0 auto 22px;line-height:1.7}
+.cx-cta a.btn{display:inline-block;padding:14px 34px;border:1px solid #d8a441;color:#241a15;
+  background:#d8a441;text-decoration:none;letter-spacing:.14em;font-size:14px;text-transform:uppercase}
+.cx-feature{padding:8vh 6vw;display:grid;grid-template-columns:1fr;gap:22px;max-width:1080px;margin:0 auto}
+.cx-feature .k{font-size:12px;letter-spacing:.4em;color:#d8a441;text-transform:uppercase}
+.cx-feature h2{font-size:clamp(22px,3.4vw,34px);margin:6px 0}
+.cx-feature p.lead{color:var(--ink);font-size:16px;line-height:1.8}
+.cx-feature p.body{color:var(--muted);font-size:15px;line-height:1.85}
+.cx-feature a.lnk{color:#d8a441;text-decoration:none;letter-spacing:.1em;font-size:14px}
+.cx-faq{padding:8vh 6vw;max-width:900px;margin:0 auto}
+.cx-faq h2{font-size:clamp(22px,3.4vw,32px);margin-bottom:26px;text-align:center;letter-spacing:.04em}
+.cx-faq .qa{border-bottom:1px solid var(--line);padding:18px 0}
+.cx-faq .qa b{display:block;font-size:16px;margin-bottom:8px}
+.cx-faq .qa span{display:block;color:var(--muted);font-size:14px;line-height:1.75}
+.cx-trust{padding:7vh 6vw;background:#2a1e18;text-align:center}
+.cx-trust h2{font-size:clamp(20px,3vw,30px);margin-bottom:30px;letter-spacing:.06em}
+.cx-trust .items{display:flex;flex-wrap:wrap;gap:26px;justify-content:center}
+.cx-trust .items div{flex:1 1 180px;max-width:240px}
+.cx-trust .items b{display:block;font-size:15px;color:#d8a441;margin-bottom:6px;letter-spacing:.08em}
+.cx-trust .items span{font-size:13px;color:var(--muted);line-height:1.6}
+
+/* 布局面板（编辑态） */
+.lp-row{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);
+  border-radius:8px;margin-bottom:7px;background:#241a15;font-size:13px;cursor:grab}
+.lp-row.locked{cursor:not-allowed;opacity:.85}
+.lp-row.dragging{opacity:.4}
+.lp-row.dragover{border-color:#d8a441;box-shadow:0 0 0 2px rgba(216,164,65,.3)}
+.lp-row .lp-grip{color:#8a7a60;letter-spacing:-2px}
+.lp-row .lp-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lp-row .lp-type{font-size:11px;color:#d8a441;border:1px solid #5a4636;padding:1px 7px;border-radius:20px}
+.lp-row button{font-size:12px;padding:4px 9px;border:1px solid #5a4636;background:transparent;color:#e8ddc9;cursor:pointer;border-radius:5px}
+.lp-row button.on{background:#d8a441;color:#241a15;border-color:#d8a441}
+.lp-row button.lp-del{border-color:#7a3b30;color:#e8a99c}
+.lp-new{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.lp-new button{font-size:12px;padding:7px 13px;border:1px solid #5a4636;background:#2e2119;color:#e8ddc9;cursor:pointer;border-radius:6px}
+.lp-new button:hover{border-color:#d8a441}
+.lp-edit{border:1px solid #5a4636;border-radius:8px;padding:12px;margin-top:8px;background:#2e2119;display:none}
+.lp-edit.open{display:block}
+.lp-edit label{display:block;font-size:11px;color:#c9b98f;margin:8px 0 3px;letter-spacing:.06em}
+.lp-edit input,.lp-edit textarea{width:100%;box-sizing:border-box;padding:7px 9px;background:#150f0c;color:#fffdf9;border:1px solid #4a382d;border-radius:5px;font-size:13px;font-family:inherit}
+.lp-edit textarea{min-height:52px;resize:vertical}
+
+/* ================= 2026-11-26 移动端筛选抽屉 ================= */
+.fbar-toggle{display:none}
+.mfilter-btn{display:none}
+@media(max-width:760px){
+  .mfilter-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid var(--line);
+    background:#2e2119;color:var(--ink);font-size:13px;cursor:pointer;border-radius:8px}
+  .mfilter-btn .fbadge{background:#d8a441;color:#241a15;border-radius:20px;padding:0 7px;font-size:11px;font-weight:700}
+  .mfilter-btn .fbadge[hidden]{display:none}
+  .catwrap{grid-template-columns:1fr!important}
+  .cattree{position:fixed;left:0;right:0;bottom:0;top:auto;z-index:60;max-height:72vh;overflow:auto;
+    transform:translateY(100%);transition:transform .25s ease;border-radius:16px 16px 0 0;
+    box-shadow:0 -20px 50px rgba(0,0,0,.5)}
+  body.mfilter-open .cattree{transform:translateY(0)}
+  body.mfilter-open .mfilter-scrim{display:block}
+  .mfilter-scrim{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:59}
+  .fbar2 .frow:not(.frow-tools){display:none}
+  .fbar2 .frow-tools{width:100%}
+}
 </style></style>
 </head>
 <body>
@@ -577,6 +646,7 @@ body.has-snaps .hero .cap h1{font-size:clamp(28px,3vw,40px);line-height:1.32}
   <button type="button" class="ghost" id="draftSave">存为草稿</button>
   <button type="button" class="ghost" id="draftToggle">草稿箱</button>
   <button type="button" class="ghost" id="styleToggle">文字样式</button>
+  <button type="button" class="ghost" id="layoutToggle">区块布局</button>
   <button type="button" class="ghost" id="inqToggle">询盘</button>
   <button type="button" class="ghost" id="shopAdminToggle">商城</button>
   <span class="draft-badge" id="draftBadge" hidden>● 有草稿未发布</span>
@@ -615,6 +685,23 @@ body.has-snaps .hero .cap h1{font-size:clamp(28px,3vw,40px);line-height:1.32}
     <button type="button" id="draftDiscard" class="ghost" disabled>丢弃草稿</button>
   </div>
   <div class="ai-status" id="draftStatus"></div>
+</div>
+<div class="markpanel sans" id="layPanel" hidden>
+  <div class="mp-head"><b>区块布局（拖拽排序 · 显示/隐藏 · 增删区块）</b><span><button type="button" id="layClose">关闭</button></span></div>
+  <p class="mp-tip">上方顺序 = 首页从上到下的显示顺序。导航/产品/联系/页脚是功能骨架，不能隐藏或删除。点「＋」新增区块后在下方填文案，访客刷新即生效。</p>
+  <div id="layList"></div>
+  <div class="lp-new" id="layNew">
+    <button type="button" data-t="cta">＋ 行动号召横幅</button>
+    <button type="button" data-t="feature">＋ 图文介绍</button>
+    <button type="button" data-t="faq">＋ 常见问题</button>
+    <button type="button" data-t="trust">＋ 信任保障条</button>
+  </div>
+  <div class="lp-edit" id="layEdit"></div>
+  <div class="toolbar" style="display:flex;gap:8px;margin-top:12px">
+    <button type="button" id="laySave" style="padding:8px 18px;border:1px solid #c08b72;background:#c08b72;color:#0f0e0c;cursor:pointer">💾 保存布局</button>
+    <button type="button" id="layReset" class="ghost" style="padding:8px 18px;border:1px solid #8a7a60;background:transparent;color:#e8ddc9;cursor:pointer">恢复默认</button>
+  </div>
+  <div class="ai-status" id="layStatus"></div>
 </div>
 <div class="markpanel sans" id="inqPanel" hidden>
   <div class="mp-head"><b>访客询盘</b><span><button type="button" id="inqRefresh">刷新</button><button type="button" id="inqClose">关闭</button></span></div>
@@ -1047,6 +1134,14 @@ function applyContent(map){
   // 灯箱「邮件询价」跟随 contact_email，不再写死
   const lb = $('#lbMail');
   if(lb && mail) lb.dataset.mail = (mail.textContent||'').trim();
+  // 自定义区块的「链接」字段：URL 不进正文，用 data-cx-url 单独持久化
+  document.querySelectorAll('[data-cx-url]').forEach(a=>{
+    const k = a.dataset.cxUrl;
+    if(Object.prototype.hasOwnProperty.call(map,k)){
+      const v = String(map[k]||'').trim();
+      if(v) a.setAttribute('href', v);
+    }
+  });
 }
 
 function snapshotContent(){
@@ -1054,6 +1149,10 @@ function snapshotContent(){
   contentNodes().forEach(el=>{
     const t = (el.innerText || el.textContent || '').replace(/\r/g,'').trim();
     c[el.dataset.contentKey] = t;
+  });
+  // 链接类字段（自定义区块 link）：href 存值，不能被可见文字覆盖
+  document.querySelectorAll('[data-cx-url]').forEach(a=>{
+    c[a.dataset.cxUrl] = (a.getAttribute('href') || '').trim();
   });
   c.seo_title = document.title;
   const m = document.querySelector('meta[name="description"]');
@@ -1092,6 +1191,12 @@ function setContentStatus(t, cls){
   s.textContent = t; s.className = 'st ' + (cls||'');
 }
 
+// 工作站内嵌编辑（site-studio ②）监听：保存成功后 postMessage，宿主刷新本地预览/联动提示
+function notifyWorkbench(kind){
+  try{ if(window.parent && window.parent !== window)
+    window.parent.postMessage({source:'lunmont-vela', type:'site-saved', kind: kind||'content', t: Date.now()}, '*'); }catch(e){}
+}
+
 function setEditable(on){
   contentNodes().forEach(el=>{
     if(on){ el.setAttribute('contenteditable','true'); el.setAttribute('spellcheck','false'); }
@@ -1116,6 +1221,7 @@ async function saveContent(){
     applyContent(contentCache);
     setContentStatus('已保存'+LANG_LABELS[activeLang()]+'：'+
       (activeLang()==='base' ? '基础文案更新' : '仅该语言访客刷新可见'),'ok');
+    notifyWorkbench('content');
   }catch(e){ setContentStatus('保存失败：' + String(e.message||e).slice(0,60),'err'); }
   finally{ btn.disabled = false; }
 }
@@ -1812,6 +1918,7 @@ async function publishDraft(){
     await loadVersions();
     setDraftStatus(d.version ? '已发布（v'+d.version+'），可在「版本历史」回滚' : '内容未变化，草稿已清空','ok');
     setContentStatus('草稿已发布','ok');
+    notifyWorkbench('draft');
   }catch(e){ setDraftStatus('发布失败：'+String(e.message||e).slice(0,70),'err'); btn.disabled=false; }
 }
 
@@ -2421,8 +2528,12 @@ function paintTree(){
       const on = F[g.key].has(k) ? ' on' : '';
       const sw = g.key==='fam'
         ? `<span class="sw" style="background:${FAM_SWATCH[k]||'#ccc'}"></span>` : '';
-      html += `<button type="button" class="ct-item${on}" data-g="${g.key}" data-v="${esc(k)}">
+      const btn = `<button type="button" class="ct-item${on}" data-g="${g.key}" data-v="${esc(k)}">
         <span>${sw}${esc(k)}</span><span class="n">${cnt[k]}</span></button>`;
+      // 品类节点：有 SEO 落地页（/c/slug）时挂外链（与筛选同口径互链，button 外平级，合法 HTML）
+      const lp = (g.key==='cat' && !editMode && CAT_LANDING[k])
+        ? `<a class="ct-lp" href="${esc(CAT_LANDING[k].path)}" title="SEO 落地页 ${esc(CAT_LANDING[k].en)}">↗</a>` : '';
+      html += lp ? '<span class="ct-wrap">' + btn + lp + '</span>' : btn;
     });
     html += `</div></div>`;
   });
@@ -2565,10 +2676,10 @@ function setInqTag(it){
 }
 $('#inqTagClear').onclick=()=>{ inqProduct=''; $('#inqTag').hidden=true; };
 
-$('#searchBox').oninput=()=>{ searchQ=$('#searchBox').value; paintFbar(); render(visibleItems()); };
+$('#searchBox').oninput=()=>{ searchQ=$('#searchBox').value; refresh(); };
 // 悬停放大开关绑定（必须在 DOM 就绪后调用一次；render 内部只同步视觉状态）
 bindZoom(); syncZoom();
-$('#sortSel').onchange=()=>{ sortMode=$('#sortSel').value; render(visibleItems()); };
+$('#sortSel').onchange=()=>{ sortMode=$('#sortSel').value; refresh(); };
 $('#inqForm').onsubmit=async e=>{
   e.preventDefault();
   if($('#inqHp').value) return; // 蜜罐：填了=机器人，静默丢弃
@@ -2838,6 +2949,9 @@ async function enterEditMode(){
   primeSeo();
   paintBlockLabels();
   loadDraft();
+  // 布局先于文案基线：自定义区块必须先渲染，snapshot/loadContent 才覆盖得到它的键
+  try{ if(!liveLayout) await loadLayout(); }catch(e){}
+  enterLayoutAdmin();
   // baseline 同步取，别等异步读取；用户一动手 input 监听会把 seq 推高，晚到响应即作废。
   // 若编辑语言≠访客当前展示语言，先读回对应语言再定基线，避免拿错语言当「原稿」。
   const sameLang = editLang === displayLang;
@@ -2872,6 +2986,7 @@ function exitEditMode(){
   // 退出管理模式：样式面板收起，未保存的样式改动一律丢弃（基线 = 已保存版本）
   $('#stylePanel').hidden=true;
   $('#inqPanel').hidden=true;
+  exitLayoutAdmin();   // 未保存的布局改动回滚到已保存版本
   styleDraft=cloneStyles(styleLive); applyStyles(styleLive); styleTarget=null;
   draftLoadSeq++;
   DRAFT=null; renderDraft();
@@ -3482,6 +3597,400 @@ $('#saMailSave').onclick=async()=>{
   btn.disabled=false;
   saStatus(r.ok?'邮件设置已保存（需 Worker 绑定 Cloudflare Email 才会真正发信）':'保存失败',r.ok?'ok':'err');
 };
+
+/* =====================================================================
+   2026-11-26 区块布局引擎：内置区块排序/显隐 + 自定义区块增删改。
+   结构存 D1 settings.layout_json（GET/POST /api/layout）；区块文案走
+   /api/content（cx_ 前缀 key），复用现有 contenteditable / 样式 / 版本链路。
+   铁律：重排只动带 data-block 的区块，绝不影响 editbar/灯箱等浮层（锚在
+   editbar 之前插入，区块恒在浮层前）；link 字段用 data-cx-url，不进正文。
+   ===================================================================== */
+const LAY_TYPES = {
+  cta:     { label:'行动号召横幅', fields:[['title','主标题'],['sub','副标题'],['btn','按钮文字'],['link','按钮链接(https:// 或 /开头)']] },
+  feature: { label:'图文介绍',     fields:[['sub','小标题'],['title','主标题'],['text','正文'],['btn','按钮文字'],['link','按钮链接']] },
+  faq:     { label:'常见问题',     fields:[['title','区块标题'],['q1','问题1'],['a1','回答1'],['q2','问题2'],['a2','回答2'],['q3','问题3'],['a3','回答3']] },
+  trust:   { label:'信任保障条',   fields:[['title','区块标题'],['i1','保障点1'],['i2','保障点2'],['i3','保障点3'],['i4','保障点4']] },
+};
+const LAY_DEFAULT_ORDER = ['nav','hero','stats','products','admin','contact','footer'];
+const LAY_LOCKED = ['nav','products','contact','footer'];
+const BUILTIN_LABEL = {nav:'顶部导航',hero:'首屏',stats:'数据条',products:'产品区',admin:'管理区(上架)',contact:'联系区',footer:'页脚'};
+// 编辑态工作副本 + 已保存到线上的基线
+let liveLayout = null, draftLayout = null, layDirty = false;
+const cxSeq = { n: 0 };
+
+function anchorEl(){ return $('#editBar') || document.body; }
+
+function newLayout(){
+  return { v:1, order: LAY_DEFAULT_ORDER.slice(), hidden: [], custom: {} };
+}
+function cloneLayout(o){ try { return JSON.parse(JSON.stringify(o)); } catch(e){ return newLayout(); } }
+
+// 用 order 把现有区块元素重排到 anchorEl 之前；缺失的 custom 区块会被创建
+function applyLayout(layout){
+  if(!layout || !Array.isArray(layout.order)) return;
+  const holder = document.body;
+  const anchor = anchorEl();
+  // 内置：body 直接子且带 data-block
+  const builtins = {};
+  holder.querySelectorAll(':scope > [data-block]').forEach(el=>{ builtins[el.dataset.block] = el; });
+  // 旧 custom 容器先移除，避免残留已删区块
+  holder.querySelectorAll(':scope > [data-cx-block]').forEach(el=>el.remove());
+  for (const id of layout.order){
+    let el = null;
+    if (builtins[id]) el = builtins[id];
+    else if (layout.custom && layout.custom[id]) el = renderCustomBlock(id, layout.custom[id]);
+    if (!el) continue;
+    el.classList.toggle('blk-hidden', (layout.hidden||[]).indexOf(id) >= 0);
+    holder.insertBefore(el, anchor);
+  }
+  // 确保被隐藏但不在 order 的极端脏数据也复位
+  Object.keys(builtins).forEach(id=>{
+    if (layout.order.indexOf(id) < 0) builtins[id].classList.add('blk-hidden');
+  });
+}
+// 注入到 [hidden]{display:none} 之外：用专门 class，避免与 edit-on 的 .admin{display:block} 打架
+(function injectHiddenCss(){
+  const s=document.createElement('style'); s.textContent='.blk-hidden{display:none!important}';
+  document.head.appendChild(s);
+})();
+
+function cxKey(id, field){ return 'cx_' + id.replace(/[^a-z0-9]/g,'') + '_' + field; }
+
+function renderCustomBlock(id, blk){
+  const type = blk.type, f = blk.fields || {};
+  const sec = document.createElement('div');
+  sec.dataset.cxBlock = id;
+  sec.dataset.block = id;
+  sec.dataset.blockLabel = '自定义 · ' + (LAY_TYPES[type] ? LAY_TYPES[type].label : type);
+  const T = (field, def) => esc(f[field] != null ? f[field] : (def||''));
+  const CK = (field) => 'data-content-key="' + cxKey(id, field) + '"';
+  const urlAttrs = (field) => 'data-cx-url="' + cxKey(id, field) + '"';
+  if (type === 'cta'){
+    sec.className = 'cx-cta';
+    sec.innerHTML = '<h2 '+CK('title')+'>'+T('title','Get a Wholesale Quote')+'</h2>'+
+      '<p '+CK('sub')+'>'+T('sub','Low MOQ · custom designs · worldwide shipping')+'</p>'+
+      (f.link!==undefined
+        ? '<a class="btn sans" '+CK('btn')+' '+urlAttrs('link')+' href="'+esc(f.link||'#contact')+'">'+T('btn','Request a Quote')+'</a>'
+        : '<a class="btn sans" '+CK('btn')+' href="#contact">'+T('btn','Request a Quote')+'</a>');
+  } else if (type === 'feature'){
+    sec.className = 'cx-feature';
+    sec.innerHTML = (f.sub
+        ? '<small class="sans" '+CK('sub')+'>'+T('sub','')+'</small>'
+        : '<small class="sans" '+CK('sub')+'></small>')+
+      '<h2 '+CK('title')+'>'+T('title','Why LUNMONT')+'</h2>'+
+      '<p class="body sans" '+CK('text')+'>'+T('text','')+'</p>'+
+      '<a class="lnk sans" '+CK('btn')+' '+(f.link!==undefined?urlAttrs('link'):'')+' href="'+esc(f.link||'#contact')+'">'+T('btn','Learn more')+'</a>';
+  } else if (type === 'faq'){
+    sec.className = 'cx-faq';
+    let inner = '<h2 '+CK('title')+'>'+T('title','FAQ · 常见问题')+'</h2>';
+    for (let i=1;i<=3;i++){
+      inner += '<div class="qa"><b '+CK('q'+i)+'>'+T('q'+i,'Question '+i)+'</b>'+
+        '<span class="sans" '+CK('a'+i)+'>'+T('a'+i,'Answer')+'</span></div>';
+    }
+    sec.innerHTML = inner;
+  } else if (type === 'trust'){
+    sec.className = 'cx-trust';
+    let inner = '<h2 '+CK('title')+'>'+T('title','Our Promise')+'</h2><div class="items">';
+    for (let i=1;i<=4;i++){
+      inner += '<div><b '+CK('i'+i)+'>'+T('i'+i,'Guarantee '+i)+'</b></div>';
+    }
+    sec.innerHTML = inner + '</div>';
+  } else {
+    return null;
+  }
+  return sec;
+}
+
+/* ---- 布局面板 UI ---- */
+function layStatus(t, cls){ const s=$('#layStatus'); if(s){ s.textContent=t||''; s.className='ai-status '+(cls||''); } }
+
+function renderLayoutPanel(){
+  const box = $('#layList'); if(!box) return;
+  const L = draftLayout; if(!L) return;
+  // 补齐内置（防止旧数据缺项）
+  LAY_DEFAULT_ORDER.forEach(b=>{ if(L.order.indexOf(b) < 0) L.order.push(b); });
+  L.order = L.order.filter(id => LAY_DEFAULT_ORDER.indexOf(id) >= 0 || L.custom[id]);
+  box.innerHTML = '';
+  L.order.forEach((id, idx)=>{
+    const isCustom = !!L.custom[id];
+    const locked = LAY_LOCKED.indexOf(id) >= 0;
+    const hidden = (L.hidden||[]).indexOf(id) >= 0;
+    const row = document.createElement('div');
+    row.className = 'lp-row' + (locked ? ' locked':'') + (hidden ? ' off':'');
+    row.draggable = true;
+    row.dataset.idx = idx;
+    const name = isCustom ? ((LAY_TYPES[L.custom[id].type]||{}).label || id) : (BUILTIN_LABEL[id] || id);
+    const typeTag = isCustom ? '<span class="lp-type">'+esc(L.custom[id].type)+'</span>' : '';
+    row.innerHTML = '<span class="lp-grip">⠿</span>'+
+      '<span class="lp-name">'+ (idx+1) + '. '+esc(name) + (locked?' 🔒':'') + typeTag +'</span>'+
+      (isCustom ? '<button type="button" class="lp-edit" data-id="'+esc(id)+'">文案</button>' : '')+
+      (locked ? '' : '<button type="button" class="lp-vis'+(hidden?'':' on')+'" data-id="'+esc(id)+'">'+(hidden?'已隐藏':'显示')+'</button>')+
+      (locked ? '' : '<button type="button" class="lp-del" data-id="'+esc(id)+'">删除</button>');
+    box.appendChild(row);
+  });
+  bindLayoutRows();
+}
+
+function bindLayoutRows(){
+  const box = $('#layList');
+  box.querySelectorAll('.lp-row').forEach(row=>{
+    row.addEventListener('dragstart', e=>{
+      row.classList.add('dragging'); e.dataTransfer.effectAllowed='move';
+      try{ e.dataTransfer.setData('text/plain', row.dataset.idx); }catch(_){}
+    });
+    row.addEventListener('dragend', ()=>{ row.classList.remove('dragging'); box.querySelectorAll('.lp-row').forEach(r=>r.classList.remove('dragover')); });
+    row.addEventListener('dragover', e=>{ e.preventDefault(); row.classList.add('dragover'); });
+    row.addEventListener('dragleave', ()=> row.classList.remove('dragover'));
+    row.addEventListener('drop', e=>{
+      e.preventDefault(); row.classList.remove('dragover');
+      const from = Number(box.querySelector('.dragging') && box.querySelector('.dragging').dataset.idx);
+      const to = Number(row.dataset.idx);
+      if (isNaN(from) || from === to) return;
+      const id = draftLayout.order.splice(from,1)[0];
+      draftLayout.order.splice(to,0,id);
+      layDirty = true; renderLayoutPanel(); applyLayout(draftLayout);
+    });
+  });
+  box.querySelectorAll('.lp-vis').forEach(b=>b.onclick=()=>{
+    const id=b.dataset.id, hi=draftLayout.hidden.indexOf(id);
+    if(hi>=0) draftLayout.hidden.splice(hi,1); else draftLayout.hidden.push(id);
+    layDirty=true; renderLayoutPanel(); applyLayout(draftLayout);
+  });
+  box.querySelectorAll('.lp-del').forEach(b=>b.onclick=()=>{
+    const id=b.dataset.id;
+    if(!confirm('删除该区块？'+(draftLayout.custom[id]?'（自定义区块将一并移除，其文案保留在草稿但不再显示）':'（可从「恢复默认」找回内置区块）'))) return;
+    draftLayout.order = draftLayout.order.filter(x=>x!==id);
+    draftLayout.hidden = draftLayout.hidden.filter(x=>x!==id);
+    layDirty=true; renderLayoutPanel(); applyLayout(draftLayout);
+  });
+  box.querySelectorAll('.lp-edit').forEach(b=>{
+    if(b.tagName!=='BUTTON') return; // .lp-edit 容器同名，只绑按钮（按钮 class 也是 lp-edit）
+  });
+  // 文案编辑按钮：用 data-id 且是 lp-edit 按钮（避免选中容器）
+  Array.prototype.forEach.call(box.querySelectorAll('button.lp-edit'), b=>b.onclick=()=>openLayEdit(b.dataset.id));
+}
+
+function openLayEdit(id){
+  const blk = draftLayout.custom[id]; if(!blk) return;
+  const host = $('#layEdit'); const def = LAY_TYPES[blk.type];
+  if(!def){ host.classList.remove('open'); return; }
+  host.className = 'lp-edit open';
+  host.innerHTML = '<b style="font-size:13px;color:#d8a441">编辑区块文案（'+esc(def.label)+'）</b>';
+  def.fields.forEach(([f,lab])=>{
+    const key = cxKey(id,f);
+    const val = blk.fields[f] != null ? blk.fields[f] : '';
+    host.appendChild(mkField(f, lab, key, val, f==='text'));
+  });
+}
+function mkField(field, label, key, val, multiline){
+  const wrap=document.createElement('div');
+  wrap.innerHTML='<label>'+esc(label)+'</label>';
+  const inp=document.createElement(multiline?'textarea':'input');
+  inp.value=val||''; inp.dataset.field=field; inp.dataset.key=key;
+  if(field==='link') inp.placeholder='https://… 或 /about';
+  inp.addEventListener('input', ()=>{
+    layDirty=true;
+    draftLayout.custom[currentEditId] && (draftLayout.custom[currentEditId].fields[field]=inp.value);
+    // 同步到当前渲染的区块：文案即时反映
+    if(field==='link'){
+      const a=document.querySelector('[data-cx-url="'+key+'"]'); if(a) a.setAttribute('href', inp.value||'#');
+    } else {
+      const el=document.querySelector('[data-content-key="'+key+'"]'); if(el) el.textContent=inp.value;
+    }
+  });
+  wrap.appendChild(inp); return wrap;
+}
+let currentEditId = null;
+// 记住当前正在编辑文案的区块 id（openLayEdit 里赋值）
+const _openLayEdit = openLayEdit;
+openLayEdit = function(id){ currentEditId = id; _openLayEdit(id); };
+
+function genCxId(){
+  let id;
+  do { id = 'x' + Math.random().toString(36).slice(2,7); } while (draftLayout.custom[id]);
+  return id;
+}
+function addCustomBlock(type){
+  const def = LAY_TYPES[type]; if(!def) return;
+  const id = genCxId();
+  const fields = {};
+  def.fields.forEach(([f])=>{ fields[f]=''; });
+  // 给点占位默认值，避免空白区块
+  if(type==='cta'){ fields.title='Get a Wholesale Quote'; fields.sub='Low MOQ · custom designs · worldwide shipping'; fields.btn='Request a Quote'; fields.link='#contact'; }
+  if(type==='feature'){ fields.sub='WHY US'; fields.title='Why LUNMONT'; fields.btn='Learn more'; fields.link='#contact'; }
+  if(type==='faq'){ fields.title='FAQ · 常见问题'; }
+  if(type==='trust'){ fields.title='Our Promise'; }
+  draftLayout.custom[id] = { type, fields };
+  // 插在产品区之后（若存在），否则末尾
+  const at = draftLayout.order.indexOf('products');
+  draftLayout.order.splice(at>=0?at+1:draftLayout.order.length, 0, id);
+  layDirty=true; renderLayoutPanel(); applyLayout(draftLayout);
+  if(editMode){ setEditable(!pickMode); paintBlockLabels(); }
+  openLayEdit(id);
+  layStatus('已添加「'+def.label+'」区块，填好文案后点「保存布局」','ok');
+}
+
+async function saveLayout(){
+  const btn=$('#laySave'); if(btn) btn.disabled=true;
+  layStatus('正在保存布局…');
+  try{
+    const r = await api('/layout',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({layout:draftLayout})});
+    if(r.status===401){ layStatus('管理密钥错误，请重新登录 /admin.html','err'); return; }
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.detail||d.error||r.status);
+    // 文案（含 link）一并写入 /api/content，走现有版本快照
+    const content = snapshotContent();
+    const rc = await api('/content',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({content, note:'区块布局+文案'})});
+    liveLayout = cloneLayout(draftLayout); layDirty=false;
+    contentBaseline = content; contentCache = content;
+    notifyWorkbench('layout');
+    layStatus('已保存：布局' + (rc.ok?' + 文案':'（布局已存，文案保存失败，请重试）') + '，访客刷新即生效','ok');
+  }catch(e){ layStatus('保存失败：'+String(e.message||e).slice(0,60),'err'); }
+  finally{ if(btn) btn.disabled=false; }
+}
+async function resetLayout(){
+  if(!confirm('恢复默认布局？将清除所有自定义区块的显示与排序，回到内置 7 区块默认顺序。（已输入的区块文案不删除，但不再显示）')) return;
+  const r = await api('/layout',{method:'DELETE'});
+  if(r.status===401){ layStatus('管理密钥错误，请重新登录','err'); return; }
+  draftLayout = newLayout(); liveLayout = null; layDirty=false;
+  renderLayoutPanel(); applyLayout(draftLayout);
+  layStatus('已恢复默认布局（访客端刷新即回到默认）','ok');
+}
+
+async function loadLayout(){
+  try{
+    const r = await fetch('/api/layout', {credentials:'same-origin'});
+    if(!r.ok) return;
+    const d = await r.json();
+    if(d && d.layout){ liveLayout = d.layout; }
+  }catch(e){ return; }
+}
+function currentLayoutForApply(){
+  // 管理态：未保存的改动即时反映（draftLayout），否则用已保存（liveLayout）
+  if(editMode && draftLayout) return draftLayout;
+  return liveLayout || newLayout();
+}
+
+/* ---- 面板开合 + 事件绑定 ---- */
+(function bindLayoutPanel(){
+  const t=$('#layoutToggle'); if(!t) return;
+  t.onclick=()=>{
+    const p=$('#layPanel'); if(!p) return;
+    const open = p.hidden;
+    $('#markPanel').hidden=true; $('#verPanel').hidden=true; $('#draftPanel').hidden=true;
+    $('#stylePanel').hidden=true; $('#inqPanel').hidden=true; $('#shopAdminPanel').hidden=true;
+    p.hidden = !open;
+    if(open){
+      if(!draftLayout) draftLayout = cloneLayout(liveLayout||newLayout());
+      renderLayoutPanel(); applyLayout(draftLayout);
+      // 布局模式不是圈选模式：直接改字保持可用；setEditable 幂等，覆盖新区块节点
+      if(pickMode) setPickMode(false);
+      setEditable(true);
+      layStatus('拖动行调整顺序，点「显示」切换隐藏，点「＋」新增区块');
+    }
+  };
+  const c=$('#layClose'); if(c) c.onclick=()=>{
+    $('#layPanel').hidden=true;
+    draftLayout = cloneLayout(liveLayout||newLayout()); applyLayout(draftLayout);
+    $('#layEdit').classList.remove('open'); layDirty=false;
+  };
+  const s=$('#laySave'); if(s) s.onclick=saveLayout;
+  const rs=$('#layReset'); if(rs) rs.onclick=resetLayout;
+  const nw=$('#layNew'); if(nw) nw.querySelectorAll('button[data-t]').forEach(b=>b.onclick=()=>addCustomBlock(b.dataset.t));
+})();
+
+/* 管理态进入/退出时同步布局面板基线 */
+function enterLayoutAdmin(){ try{ draftLayout = cloneLayout(liveLayout||newLayout()); applyLayout(draftLayout); }catch(e){} }
+function exitLayoutAdmin(){
+  $('#layPanel') && ($('#layPanel').hidden=true);
+  $('#layEdit') && $('#layEdit').classList.remove('open');
+  draftLayout=null; layDirty=false;
+  applyLayout(liveLayout||newLayout());
+}
+
+/* 启动：读已保存布局并应用（访客与管理都先按 live 渲染） */
+async function bootLayout(){
+  await loadLayout();
+  applyLayout(liveLayout || newLayout());
+}
+bootLayout();
+// 管理态若已存在（?admin=1 自动进入），enterEditMode 会再调 enterLayoutAdmin
+
+/* =====================================================================
+   2026-11-26 筛选状态持久化（URL 可分享）+ 移动端筛选抽屉
+   ===================================================================== */
+function filtersToQuery(){
+  const u = new URL(location.href);
+  const set = (k, set2) => { const arr=[...set2]; if(arr.length) u.searchParams.set(k, arr.join('|')); else u.searchParams.delete(k); };
+  set('cat', F.cat); set('sty', F.style); set('sz', F.size); set('fam', F.fam);
+  if(searchQ.trim()) u.searchParams.set('q', searchQ.trim()); else u.searchParams.delete('q');
+  if(sortMode && sortMode!=='rank') u.searchParams.set('sort', sortMode); else u.searchParams.delete('sort');
+  // 管理参数不回写 URL
+  u.searchParams.delete('admin');
+  try{ history.replaceState(null,'',u.pathname + (u.search||'') + u.hash); }catch(e){}
+}
+function queryToFilters(){
+  let u; try{ u = new URL(location.href); }catch(e){ return false; }
+  const sp = u.searchParams;
+  const had = ['cat','sty','sz','fam'].some(k=>sp.has(k)) || sp.has('q') || sp.has('sort');
+  const fill = (k, set) => { set.clear(); const v=sp.get(k); if(v) v.split('|').forEach(x=>{ if(x) set.add(x); }); };
+  fill('cat',F.cat); fill('sty',F.style); fill('sz',F.size); fill('fam',F.fam);
+  if(sp.has('q')) searchQ = sp.get('q');
+  if(sp.has('sort')) { const s=sp.get('sort'); if(['rank','new','colors','name','cat','size'].indexOf(s)>=0) sortMode=s; }
+  return had;
+}
+// 浏览器前进/后退（同页 query 变化）→ 重新解析并刷新
+window.addEventListener('popstate', ()=>{ queryToFilters(); const sb=$('#searchBox'); if(sb) sb.value=searchQ; const ss=$('#sortSel'); if(ss) ss.value=sortMode; refresh(); });
+// 原始 refresh 包装：筛选变化即同步 URL
+const _refresh0 = refresh;
+refresh = function(){ _refresh0(); if(!editMode) filtersToQuery(); };
+
+function initFilterChrome(){
+  const sb=$('#searchBox'); if(sb) sb.value=searchQ;
+  const ss=$('#sortSel'); if(ss) ss.value=sortMode;
+  // 移动端：把工具行标记出来 + 注入「筛选」按钮
+  const fbar=$('#fbar2');
+  if(fbar && !fbar.querySelector('.frow-tools')){
+    const rows=fbar.querySelectorAll('.frow');
+    if(rows.length) rows[rows.length-1].classList.add('frow-tools');
+  }
+  if(!$('#mfilterBtn')){
+    const btn=document.createElement('button');
+    btn.type='button'; btn.id='mfilterBtn'; btn.className='mfilter-btn';
+    btn.innerHTML='☰ 筛选 <span class="fbadge" id="fbadge" hidden>0</span>';
+    const tools=fbar && fbar.querySelector('.frow-tools'); if(tools) tools.insertBefore(btn, tools.firstChild);
+    btn.onclick=()=>{ document.body.classList.toggle('mfilter-open'); };
+    const scrim=document.createElement('div'); scrim.className='mfilter-scrim'; scrim.id='mfilterScrim';
+    scrim.onclick=()=>document.body.classList.remove('mfilter-open');
+    document.body.appendChild(scrim);
+  }
+  paintFbadge();
+}
+function paintFbadge(){
+  const b=$('#fbadge'); if(!b) return;
+  let n=0; for(const k in F) n+=F[k].size; if(searchQ.trim()) n++;
+  b.textContent=n; b.hidden = n===0;
+}
+const _refresh1 = refresh;
+refresh = function(){ _refresh1(); paintFbadge(); };
+
+/* ---- 类目落地页互链（SEO 对齐）：拉 /api/seo/categories 给左树品类挂落地页链接 ---- */
+let CAT_LANDING = {};
+async function loadCatLanding(){
+  try{
+    const r = await fetch('/api/seo/categories',{credentials:'same-origin'});
+    if(!r.ok) return; const d = await r.json();
+    (d.categories||[]).forEach(c=>{ if(c.category) CAT_LANDING[c.category]={path:c.path,en:c.en}; });
+    if(Object.keys(CAT_LANDING).length && !editMode) paintTree();
+  }catch(e){}
+}
+
+/* 启动补充：筛选深链回填 + 移动端 chrome + 类目落地页 */
+queryToFilters();
+initFilterChrome();
+loadCatLanding();
 
 /* 启动：登录态 + 购物车徽章 +（如有）PayPal 回跳在 ppReturn 里已处理 */
 paintCartBadge();
