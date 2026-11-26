@@ -3606,7 +3606,7 @@ $('#saMailSave').onclick=async()=>{
    editbar 之前插入，区块恒在浮层前）；link 字段用 data-cx-url，不进正文。
    ===================================================================== */
 const LAY_TYPES = {
-  cta:     { label:'行动号召横幅', fields:[['title','主标题'],['sub','副标题'],['btn','按钮文字'],['link','按钮链接(https:// 或 /开头)']] },
+  cta:     { label:'行动号召横幅', fields:[['title','主标题'],['sub','副标题'],['btn','按钮文字'],['link','按钮链接(https:// · /path · #锚点)']] },
   feature: { label:'图文介绍',     fields:[['sub','小标题'],['title','主标题'],['text','正文'],['btn','按钮文字'],['link','按钮链接']] },
   faq:     { label:'常见问题',     fields:[['title','区块标题'],['q1','问题1'],['a1','回答1'],['q2','问题2'],['a2','回答2'],['q3','问题3'],['a3','回答3']] },
   trust:   { label:'信任保障条',   fields:[['title','区块标题'],['i1','保障点1'],['i2','保障点2'],['i3','保障点3'],['i4','保障点4']] },
@@ -3787,7 +3787,7 @@ function mkField(field, label, key, val, multiline){
   wrap.innerHTML='<label>'+esc(label)+'</label>';
   const inp=document.createElement(multiline?'textarea':'input');
   inp.value=val||''; inp.dataset.field=field; inp.dataset.key=key;
-  if(field==='link') inp.placeholder='https://… 或 /about';
+  if(field==='link') inp.placeholder='https://… 或 /about 或 #contact';
   inp.addEventListener('input', ()=>{
     layDirty=true;
     draftLayout.custom[currentEditId] && (draftLayout.custom[currentEditId].fields[field]=inp.value);
@@ -3833,6 +3833,14 @@ function addCustomBlock(type){
 async function saveLayout(){
   const btn=$('#laySave'); if(btn) btn.disabled=true;
   layStatus('正在保存布局…');
+  // 与服务端 cleanLayout 同口径预检：link 只允许 https://… / /path / #anchor
+  for (const id in draftLayout.custom){
+    const lk = String((draftLayout.custom[id].fields||{}).link||'').trim();
+    if (lk && !/^(https:\/\/[^\s"]+|\/[^\s"]*|#[\w-]{1,60})$/.test(lk)){
+      layStatus('区块链接不合法：'+lk+'（须以 https:// 或 / 或 # 开头）','err');
+      if(btn) btn.disabled=false; return;
+    }
+  }
   try{
     const r = await api('/layout',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({layout:draftLayout})});
