@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<!-- build-tag: 2026-11-26 i18n-k5-snaps-20261126 -->
+<!-- build-tag: 2026-11-26 i18n-k5-snaps-stats-20261126 -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hair Clips & Hair Accessories Manufacturer | LUNMONT</title>
 <meta name="description" content="LUNMONT is a Yiwu hair clip and hair accessories manufacturer offering acetate clips, claw clips and custom wholesale orders with low MOQ. Request a quote today.">
@@ -748,9 +748,7 @@ Wholesale from Yiwu</h1>
 </div>
 
 <div class="stats sans" data-block="stats" data-block-label="数据条">
-  <div><b id="statCount">—</b><i data-content-key="stat1_label">Products / 展示产品</i></div>
   <div><b data-content-key="stat2_num">Low MOQ / 小批量</b><i data-content-key="stat2_label">Flexible Orders / 灵活起订</i></div>
-  <div><b data-content-key="stat3_num">Export / 出口</b><i data-content-key="stat3_label">Direct Export / 进出口直营</i></div>
 </div>
 
 <section id="products" data-block="products" data-block-label="产品区">
@@ -2223,7 +2221,7 @@ function render(items) {
   const src = items.length ? items : DEFAULTS;
   const list = src.map(toCard);
   $('#empty').style.display = items.length ? 'none':'block';
-  $('#statCount').textContent = items.length || '4';
+  const sc=$('#statCount'); if(sc) sc.textContent = items.length || '4';
   syncVMode(); syncZoom();
   for (const it of list) {
     const el=document.createElement('div'); el.className='card';
