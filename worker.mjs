@@ -5,7 +5,7 @@
 // 关键：门禁在服务端 —— 所有写接口不论走哪个前端都先过 checkAdmin，
 // 前端登录只决定「能不能拿到输入框」，绝不承担鉴权职责。
 
-// build-tag: 2026-11-14 reg-name-default
+// build-tag: 2026-11-26 layout-blocks-facets
 const MAX_IMAGE = 700000; // dataURL char cap, keeps request body < 1MiB
 const MAX_CONTENT_VALUE = 4000;
 
@@ -110,6 +110,77 @@ const SETTINGS_SCHEMA = `CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL DEFAULT ''
 )`;
+
+/* ================= 区块布局（2026-11-26） =================
+   首页 7 个内置区块（data-block）的排序/显隐 + 自定义区块（模板化，纯文字+可选链接，
+   不开 HTML 注入口子）。布局存 settings.layout_json；自定义区块的**文字内容**走
+   /api/content 链路（cx_ 前缀 key），这里只存结构。访客 GET 公开可读，写需 admin。 */
+const LAYOUT_V = 1;
+const BUILTIN_BLOCKS = ['nav', 'hero', 'stats', 'products', 'admin', 'contact', 'footer'];
+// locked：不可隐藏也不可删除（导航/产品/联系/页脚是功能骨架，admin 区是上架入口）
+const LOCKED_BLOCKS = ['nav', 'products', 'contact', 'footer'];
+const LAYOUT_TYPES = {
+  cta: ['title', 'sub', 'btn', 'link'],
+  feature: ['title', 'sub', 'text', 'btn', 'link'],
+  faq: ['title', 'q1', 'a1', 'q2', 'a2', 'q3', 'a3'],
+  trust: ['title', 'i1', 'i2', 'i3', 'i4'],
+};
+const CUSTOM_ID_RE = /^x[0-9a-z]{3,12}$/;
+
+// 归一化校验：非法返回 null（调用方 400）。宽容缺省：order 缺项由前端按默认补齐。
+function cleanLayout(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const custom = raw.custom && typeof raw.custom === 'object' && !Array.isArray(raw.custom)
+    ? raw.custom : {};
+  const ckeys = Object.keys(custom);
+  if (ckeys.length > 12) return null;
+  const outCustom = {};
+  for (const id of ckeys) {
+    if (!CUSTOM_ID_RE.test(id)) return null;
+    const blk = custom[id];
+    if (!blk || typeof blk !== 'object' || Array.isArray(blk)) return null;
+    const type = String(blk.type || '');
+    const allowed = LAYOUT_TYPES[type];
+    if (!allowed) return null;
+    const fields = {};
+    for (const f of Object.keys(blk)) {
+      if (f === 'type') continue;
+      if (allowed.indexOf(f) < 0) return null;   // 多余字段直接拒绝，防止塞任意数据
+      const v = String(blk[f] == null ? '' : blk[f]).slice(0, f === 'link' ? 300 : 600);
+      if (f === 'link' && v && !/^(https:\/\/[^\s"]+|\/[^\s"]*)$/.test(v)) return null;
+      fields[f] = v;
+    }
+    outCustom[id] = { type, fields };
+  }
+  const orderIn = Array.isArray(raw.order) ? raw.order : [];
+  const order = [];
+  const seen = new Set();
+  for (const x of orderIn) {
+    const id = String(x || '');
+    if (BUILTIN_BLOCKS.indexOf(id) < 0 && !outCustom[id]) return null;
+    if (seen.has(id)) return null;
+    seen.add(id); order.push(id);
+  }
+  // 内置区块缺失 = 隐藏该区块（锁定骨架除外，绝不隐藏）；统一补齐避免两侧口径分叉
+  const hiddenIn = Array.isArray(raw.hidden) ? raw.hidden : [];
+  const hidden = [];
+  for (const x of hiddenIn) {
+    const id = String(x || '');
+    if (BUILTIN_BLOCKS.indexOf(id) < 0 && !outCustom[id]) return null;
+    if (LOCKED_BLOCKS.indexOf(id) >= 0) continue;  // 锁定区块忽略隐藏请求，不整体拒绝
+    if (seen.has(id) && hidden.indexOf(id) < 0) hidden.push(id);
+  }
+  for (const b of BUILTIN_BLOCKS) {
+    if (!seen.has(b)) { order.push(b); if (LOCKED_BLOCKS.indexOf(b) < 0 && hidden.indexOf(b) < 0) hidden.push(b); }
+  }
+  return { v: LAYOUT_V, order, hidden, custom: outCustom };
+}
+
+async function readLayout(env) {
+  const raw = await readSetting(env, 'layout_json');
+  if (!raw) return null;
+  try { return cleanLayout(JSON.parse(raw)); } catch { return null; }
+}
 
 // 内容版本：page/locale 从第一版就留列，避免以后加双语要做全量数据迁移。
 // 每次保存生成一版完整快照；回滚 = 把某历史版写回 site_content 并再记一版。
@@ -1045,10 +1116,11 @@ function cleanContentInput(c) {
   if (!c || typeof c !== 'object' || Array.isArray(c)) return null;
   const allowed = Object.keys(DEFAULT_CONTENT);
   const keys = Object.keys(c);
-  if (!keys.length || keys.length > 60) return null;
+  if (!keys.length || keys.length > 160) return null;
   const clean = {};
   for (const k of keys) {
-    if (!/^[a-z0-9_]{1,40}$/.test(k) || allowed.indexOf(k) < 0) return null;
+    // cx_ 前缀 = 区块布局的自定义区块文案（2026-11-26），不在默认白名单也放行
+    if (!/^[a-z0-9_]{1,40}$/.test(k) || (allowed.indexOf(k) < 0 && k.indexOf('cx_') !== 0)) return null;
     if (typeof c[k] !== 'string') return null;
     clean[k] = c[k].slice(0, MAX_CONTENT_VALUE);
   }
@@ -1073,10 +1145,10 @@ function cleanStyles(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
   const allowed = Object.keys(DEFAULT_CONTENT);
   const keys = Object.keys(input);
-  if (keys.length > 60) return null;
+  if (keys.length > 160) return null;
   const out = {};
   for (const k of keys) {
-    if (allowed.indexOf(k) < 0) return null;
+    if (allowed.indexOf(k) < 0 && k.indexOf('cx_') !== 0) return null;
     const s = input[k];
     if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
     const o = {};
@@ -1351,6 +1423,18 @@ async function renderCategoryPage(env, slug) {
   for (const k of Object.keys(CATEGORY_I18N)) {
     if (CATEGORY_I18N[k].slug === slug) { catKey = k; break; }
   }
+  // 2026-11-26 口径对齐：未登记类目（catI18n 兜底 slug）也可开落地页——
+  // 从库内实际 category 反查，保证 /c/ 页与首页左树 ↗ 深链永远一致
+  if (!catKey) {
+    try {
+      await ensureProducts(env);
+      const cs = await env.DB.prepare('SELECT DISTINCT category FROM products').all();
+      for (const row of (cs.results || [])) {
+        const c = String(row.category || '').trim();
+        if (c && catI18n(c).slug === slug) { catKey = c; break; }
+      }
+    } catch (e) { /* 库查询失败按原逻辑 return null */ }
+  }
   if (!catKey) return null;
   const ci = CATEGORY_I18N[catKey];
   const rows = await env.DB.prepare(
@@ -1413,6 +1497,9 @@ async function renderCategoryPage(env, slug) {
     'main site to narrow by style, size and color, or contact us with a SKU list for a quote.</p>' +
     '<h2>FAQ</h2>' + catFaqs.map(f =>
       '<div class="faq"><h3>' + escHtml(f[0]) + '</h3><p>' + escHtml(f[1]) + '</p></div>').join('') +
+    // 首页筛选深链（与首页 ↗ 互链成闭环）：?cat= 会被首页 queryToFilters 回填
+    '<a class="cta alt" href="/?cat=' + encodeURIComponent(catKey) + '">Browse &amp; filter ' +
+    escHtml(ci.en) + ' on our site</a>' +
     '<a class="cta" href="/#contact">Request a Quote</a>';
   return new Response(seoPageHead(title, desc, canonical, schema, { ogImage: firstImg || undefined }) + body + seoPageFoot(), {
     status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=1800' }
@@ -1432,8 +1519,16 @@ async function renderSitemap(env) {
     xml += '  <url><loc>' + SEO_ORIGIN + u + '</loc><changefreq>' + f + '</changefreq><priority>' + pr + '</priority></url>\n';
   }
   const cats = [];
-  for (const k of Object.keys(CATEGORY_I18N)) cats.push('/c/' + CATEGORY_I18N[k].slug + '/');
-  const rows = await env.DB.prepare('SELECT id, sku, name FROM products ORDER BY id DESC LIMIT 1000').all();
+  const seenCat = new Set();
+  for (const k of Object.keys(CATEGORY_I18N)) { cats.push('/c/' + CATEGORY_I18N[k].slug + '/'); seenCat.add(CATEGORY_I18N[k].slug); }
+  const rows = await env.DB.prepare('SELECT id, sku, name, category FROM products ORDER BY id DESC LIMIT 1000').all();
+  // 库内实际出现但未登记的类目也进 sitemap（与 renderCategoryPage 反查放开同口径）
+  for (const p of (rows.results || [])) {
+    const c = String(p.category || '').trim();
+    if (!c) continue;
+    const sl = catI18n(c).slug;
+    if (!seenCat.has(sl)) { seenCat.add(sl); cats.push('/c/' + sl + '/'); }
+  }
   const seoRows = await env.DB.prepare('SELECT sku, slug FROM product_seo').all();
   const seoBySku = {};
   for (const s of (seoRows.results || [])) if (s.sku) seoBySku[s.sku] = s;
@@ -1559,6 +1654,23 @@ export default {
     if (route === '/seo/products' && (method === 'GET' || method === 'POST')) {
       const r = await handleSeoApi(env, request, route, method);
       if (r) return r;
+    }
+
+    // 2026-11-26 SEO 对齐：线上品类 → 英文 slug 映射（公开只读，带商品数）。
+    // 首页类目树/筛选深链与 /c/ 落地页共用同一口径，工作站⑬也能直接展示落地页地址。
+    if (route === '/seo/categories' && method === 'GET') {
+      try {
+        await ensureProducts(env);
+        const r = await env.DB.prepare('SELECT category, COUNT(*) AS n FROM products GROUP BY category ORDER BY n DESC').all();
+        const categories = (r.results || []).map(row => {
+          const cat = String(row.category || '').trim();
+          const i = catI18n(cat || '其他');
+          return { category: cat, count: row.n, slug: i.slug, en: i.en, path: '/c/' + i.slug + '/' };
+        });
+        return json({ ok: true, categories });
+      } catch (e) {
+        return json({ ok: false, categories: [], error: String(e && e.message || e).slice(0, 120) }, 500);
+      }
     }
 
     // —— 管理登录校验（公开：登录本身就是换取校验结果）——
@@ -2294,6 +2406,113 @@ export default {
       if (!(await checkAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
     }
 
+    /* ---- 区块布局：GET 公开（访客首页就要应用），POST 已过上方 admin 门禁 ---- */
+    if (route === '/layout' && method === 'GET') {
+      try {
+        const layout = await readLayout(env);
+        return json({ layout: layout || null, builtin: BUILTIN_BLOCKS, locked: LOCKED_BLOCKS });
+      } catch (e) {
+        return json({ layout: null, builtin: BUILTIN_BLOCKS, locked: LOCKED_BLOCKS });
+      }
+    }
+    if (route === '/layout' && method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+      const clean = cleanLayout(body && body.layout);
+      if (!clean) return json({ error: 'invalid layout' }, 400);
+      try {
+        await env.DB.prepare(SETTINGS_SCHEMA).run();
+        await env.DB.prepare(
+          "INSERT INTO settings (key, value) VALUES ('layout_json', ?) " +
+          'ON CONFLICT(key) DO UPDATE SET value=excluded.value'
+        ).bind(JSON.stringify(clean)).run();
+        return json({ ok: true, order: clean.order.length, custom: Object.keys(clean.custom).length });
+      } catch (e) {
+        return json({ error: 'layout save failed', detail: String(e && e.message || e).slice(0, 160) }, 500);
+      }
+    }
+    if (route === '/layout' && method === 'DELETE') {
+      try {
+        await env.DB.prepare("DELETE FROM settings WHERE key='layout_json'").run();
+        return json({ ok: true, reset: true });
+      } catch (e) {
+        return json({ error: 'layout reset failed', detail: String(e && e.message || e).slice(0, 160) }, 500);
+      }
+    }
+
+    /* ---- 四维分类维护（工作站⑬）：整值改名 / 迁移，单列 UPDATE 绝不全列覆盖 ----
+       dims: category | styles | size | family。sku: 行 ukey 不随 category 变，天然安全；
+       nm: 行改 category 会重算 ukey，撞键（409 UNIQUE）该行如实报错跳过，绝不硬写。 */
+    if (route === '/products/facets' && method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
+      const dim = String(body && body.dim || '');
+      const DIM_COL = { category: 'category', styles: 'styles', size: 'size_type', family: 'family' };
+      if (!DIM_COL[dim]) return json({ error: 'dim must be category|styles|size|family' }, 400);
+      const from = String(body.from || '').trim().slice(0, 60);
+      const to = String(body.to || '').trim().slice(0, 60);
+      const ids = Array.isArray(body.ids) ? body.ids.map(Number).filter((n) => Number.isInteger(n) && n > 0) : null;
+      if (!from && !ids) return json({ error: 'from or ids required' }, 400);
+      const col = DIM_COL[dim];
+      try {
+        await ensureProducts(env);
+        const all = await env.DB.prepare('SELECT id, name, sku, ukey, ' + col + ' AS v FROM products').all();
+        let targets;
+        if (ids && ids.length) {
+          const want = new Set(ids);
+          targets = (all.results || []).filter((r) => want.has(r.id));
+        } else {
+          targets = (all.results || []).filter((r) => {
+            if (dim === 'styles') return String(r.v || '').split(',').map(s => s.trim()).indexOf(from) >= 0;
+            return String(r.v || '').trim() === from;
+          });
+        }
+        if (!targets.length) return json({ error: 'no matching products' }, 404);
+        if (body.dryRun) {
+          return json({ ok: true, dryRun: true, dim, from, to, count: targets.length,
+                        sample: targets.slice(0, 8).map(r => r.sku || r.name) });
+        }
+        if (dim !== 'category' && !to) return json({ error: 'to required for this dim' }, 400);
+        let updated = 0; const errors = [];
+        for (const r of targets) {
+          let nv;
+          if (dim === 'styles') {
+            const arr = String(r.v || '').split(',').map(s => s.trim()).filter(Boolean);
+            const set = new Set(to ? arr.map(s => s === from ? to : s).concat([to]) : arr.filter(s => s !== from));
+            set.delete(''); nv = Array.from(set).join(',').slice(0, 180);
+          } else {
+            nv = to;
+            if (dim === 'category' && !nv) { errors.push({ id: r.id, reason: '品类不能为空' }); continue; }
+          }
+          try {
+            if (dim === 'category') {
+              // nm: 键行 category 参与 ukey，重算后可能撞键 → UNIQUE 报错跳过该行
+              const newKey = productKey({ name: r.name, category: nv, sku: r.sku });
+              if (r.ukey && r.ukey.indexOf('sku:') === 0) {
+                await env.DB.prepare("UPDATE products SET category=?, updated_at=datetime('now') WHERE id=?")
+                  .bind(nv, r.id).run();
+              } else {
+                await env.DB.prepare("UPDATE products SET category=?, ukey=?, updated_at=datetime('now') WHERE id=?")
+                  .bind(nv, newKey, r.id).run();
+              }
+            } else {
+              await env.DB.prepare('UPDATE products SET ' + col + "=?, updated_at=datetime('now') WHERE id=?")
+                .bind(nv, r.id).run();
+            }
+            updated++;
+          } catch (e) {
+            const m = String(e && e.message || e);
+            errors.push({ id: r.id, sku: r.sku, reason: m.indexOf('UNIQUE') >= 0 ? '去重键冲突' : m.slice(0, 60) });
+          }
+        }
+        return json({ ok: !errors.length, dim, from, to, updated,
+                      errors: errors.slice(0, 20),
+                      message: '已更新 ' + updated + ' 行' + (errors.length ? '，失败 ' + errors.length + ' 行' : '') });
+      } catch (e) {
+        return json({ error: 'facets failed', detail: String(e && e.message || e).slice(0, 160) }, 500);
+      }
+    }
+
     if (route === '/styles' && method === 'POST') {
       let body;
       try { body = await request.json(); } catch { return json({ error: 'invalid json' }, 400); }
@@ -2402,7 +2621,7 @@ export default {
         let old = {};
         try { old = JSON.parse(row.content_json) || {}; } catch { return json({ error: 'bad snapshot' }, 500); }
         const keys = Object.keys(old);
-        if (!keys.length || keys.length > 60) return json({ error: 'bad snapshot keys' }, 500);
+        if (!keys.length || keys.length > 160) return json({ error: 'bad snapshot keys' }, 500);
         for (const k of keys) {
           if (!/^[a-z0-9_]{1,40}$/.test(k) || typeof old[k] !== 'string')
             return json({ error: 'bad snapshot value: ' + k }, 500);
@@ -2518,7 +2737,7 @@ export default {
       if (!c || typeof c !== 'object' || Array.isArray(c))
         return json({ error: 'content object required' }, 400);
       const keys = Object.keys(c);
-      if (!keys.length || keys.length > 60) return json({ error: 'bad key count' }, 400);
+      if (!keys.length || keys.length > 160) return json({ error: 'bad key count' }, 400);
       for (const k of keys) {
         if (!/^[a-z0-9_]{1,40}$/.test(k)) return json({ error: 'invalid key: ' + k }, 400);
         if (typeof c[k] !== 'string') return json({ error: 'invalid value: ' + k }, 400);
