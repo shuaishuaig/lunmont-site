@@ -1214,8 +1214,8 @@ const CATEGORY_I18N = {
 };
 function catI18n(cat) {
   if (CATEGORY_I18N[cat]) return CATEGORY_I18N[cat];
-  // 未登记类目：slug 用 unicode-safe 兜底，title 保留原文（不编造英文）
-  const slug = 'cat-' + String(cat || 'all').replace(/[^\w\u4e00-\u9fa5]+/g, '-').slice(0, 40);
+  // 未登记类目：slug 用 unicode-safe 兜底并转小写（URL 规范），title 保留原文（不编造英文）
+  const slug = ('cat-' + String(cat || 'all').replace(/[^\w\u4e00-\u9fa5]+/g, '-')).replace(/^-+|-+$/g, '').toLowerCase().slice(0, 40);
   return { slug, en: String(cat || 'Hair Accessories') };
 }
 
@@ -1436,7 +1436,8 @@ async function renderCategoryPage(env, slug) {
     } catch (e) { /* 库查询失败按原逻辑 return null */ }
   }
   if (!catKey) return null;
-  const ci = CATEGORY_I18N[catKey];
+  // 反查命中的未登记类目在 CATEGORY_I18N 里没有条目，统一走 catI18n（兜底 slug 同源）
+  const ci = catI18n(catKey);
   const rows = await env.DB.prepare(
     'SELECT id, name, category, image, sku, price FROM products WHERE category=? ORDER BY id DESC LIMIT 200'
   ).bind(catKey).all();
