@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<!-- build-tag: 2026-11-25 i18n-k5-20261125 -->
+<!-- build-tag: 2026-11-26 i18n-k5-snaps-20261126 -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hair Clips & Hair Accessories Manufacturer | LUNMONT</title>
 <meta name="description" content="LUNMONT is a Yiwu hair clip and hair accessories manufacturer offering acetate clips, claw clips and custom wholesale orders with low MOQ. Request a quote today.">
@@ -537,6 +537,21 @@ footer,.foot-links a{color:#9c8577}
 .empty,.loading,.error,.todo,.hint,.legal,.shop-hint{color:#9c8577}
 .lang-switch button{border-color:#4a382d;color:var(--muted)}
 .lang-switch button:hover{color:var(--ink);border-color:var(--ink)}
+
+/* ---- K5 拍立得模式：后台配了 snaps 即启用，否则保持整屏大图 ---- */
+body.has-snaps .hero{display:grid;grid-template-columns:1.08fr .92fr;align-items:center;height:auto;min-height:660px;padding:110px 6vw 72px;gap:40px}
+body.has-snaps .hero>img#heroImg,body.has-snaps .hero .veil{display:none}
+body.has-snaps .hero .cap{position:static;max-width:640px}
+body.has-snaps .hero .cap h1{font-size:clamp(28px,3vw,40px);line-height:1.32}
+.snaps{position:relative;height:clamp(340px,34vw,470px)}
+.snap{position:absolute;background:#fffdf9;padding:10px 10px 32px;box-shadow:0 30px 60px -26px rgba(0,0,0,.85);box-sizing:border-box}
+.snap img{display:block;width:100%;height:100%;object-fit:cover}
+.snap span{position:absolute;left:12px;bottom:9px;font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:#8d7668;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:calc(100% - 24px)}
+@media(max-width:860px){
+  body.has-snaps .hero{grid-template-columns:1fr;gap:30px;padding:96px 6vw 44px;min-height:0}
+  .snaps{height:340px}
+  .snap{padding:7px 7px 22px}
+}
 </style></style>
 </head>
 <body>
@@ -729,6 +744,7 @@ Wholesale from Yiwu</h1>
     <p class="sans" data-content-key="hero_sub">LUNMONT · Low MOQ, Custom Designs &amp; Worldwide Export / 小批量起订 · 来样订制 · 进出口直营</p>
     <a class="sans" href="#contact" data-content-key="hero_cta">Get a Quote / 获取产品目录</a>
   </div>
+  <div class="snaps" id="snaps" hidden></div>
 </div>
 
 <div class="stats sans" data-block="stats" data-block-label="数据条">
@@ -809,6 +825,15 @@ Wholesale from Yiwu</h1>
       <div><button class="btn" id="heroBtn" type="button">替换首图</button></div>
     </div>
     <div class="status sans" id="heroStatus"></div>
+  </div>
+  <div class="hero-swap sans">
+    <label style="display:block;font-size:12px;letter-spacing:.2em;color:var(--muted);margin-bottom:6px">首屏拍立得卡片（1-4 张；清空则恢复上方"首屏大图"整屏模式）</label>
+    <div id="snapList" style="margin-bottom:8px"></div>
+    <div class="form" style="max-width:520px">
+      <div><input type="file" id="snapFile" accept="image/*" multiple></div>
+      <div style="display:flex;gap:8px"><button class="btn" id="snapAdd" type="button">添加图片</button><button class="btn" id="snapClear" type="button">清空</button></div>
+    </div>
+    <div class="status sans" id="snapStatus"></div>
   </div>
   <div class="seo-edit sans">
     <h3>网页标题与描述（SEO，不在页面上显示）</h3>
@@ -2634,6 +2659,105 @@ $('#heroBtn').onclick=async()=>{
   finally{ btn.disabled=false; }
 };
 
+
+/* ---- K5 拍立得：访客读 /api/snaps；管理模式可增删换图、改说明、改数量 ---- */
+let snapData = [];
+const SNAP_POS = {
+  1: [[8, 4, 78, 88, -3, 1]],
+  2: [[0, 8, 55, 66, -5, 2], [50, 24, 48, 58, 5, 3]],
+  3: [[0, 8, 52, 56, -4, 2], [50, 0, 46, 42, 5, 3], [52, 46, 44, 46, -3, 4]],
+  4: [[0, 0, 50, 46, -4, 2], [50, 2, 48, 42, 5, 1], [2, 50, 46, 46, 3, 4], [52, 48, 44, 46, -3, 3]]
+};
+function renderSnapsInto(box, list) {
+  box.innerHTML = '';
+  box.hidden = !list.length;
+  const pos = SNAP_POS[Math.min(4, Math.max(1, list.length))];
+  list.slice(0, 4).forEach((s, i) => {
+    const [l, tp, w, h, rot, z] = pos[i];
+    const d = document.createElement('div');
+    d.className = 'snap';
+    d.style.cssText = 'left:' + l + '%;top:' + tp + '%;width:' + w + '%;height:' + h + '%;z-index:' + z + ';transform:rotate(' + rot + 'deg)';
+    const im = document.createElement('img');
+    im.src = s.img; im.alt = s.cap || 'LUNMONT hair clip'; im.loading = i ? 'lazy' : 'eager';
+    d.appendChild(im);
+    if (s.cap) { const sp = document.createElement('span'); sp.textContent = s.cap; d.appendChild(sp); }
+    box.appendChild(d);
+  });
+}
+async function loadSnaps() {
+  try {
+    const r = await api('/snaps'); if (!r.ok) return;
+    const d = await r.json();
+    snapData = Array.isArray(d.snaps) ? d.snaps.slice(0, 4) : [];
+    if (snapData.length) { document.body.classList.add('has-snaps'); renderSnapsInto(document.getElementById('snaps'), snapData); }
+    renderSnapAdmin();
+  } catch (e) {}
+}
+function snapSt(msg, cls) { const st = document.getElementById('snapStatus'); if (st) { st.textContent = msg; st.className = 'status sans ' + (cls || ''); } }
+function compressSnap(file) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => {
+      const max = 640; let w = img.width, h = img.height;
+      if (w > max) { h = Math.round(h * max / w); w = max; }
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      res(c.toDataURL('image/jpeg', 0.72));
+    };
+    img.onerror = rej; img.src = URL.createObjectURL(file);
+  });
+}
+async function saveSnaps(list) {
+  snapSt('保存中…');
+  try {
+    const r = await api('/snaps', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ snaps: list }) });
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 401) { snapSt('管理密钥错误', 'err'); return false; }
+    if (!r.ok) { snapSt('保存失败：' + (d.error || r.status), 'err'); return false; }
+    snapData = list;
+    if (list.length) { document.body.classList.add('has-snaps'); renderSnapsInto(document.getElementById('snaps'), list); }
+    else { document.body.classList.remove('has-snaps'); renderSnapsInto(document.getElementById('snaps'), []); }
+    renderSnapAdmin();
+    snapSt(list.length ? ('已保存 ' + list.length + ' 张，访客刷新即可看到 ✅') : '已清空，恢复整屏大图 ✅', 'ok');
+    return true;
+  } catch (e) { snapSt('保存失败：' + String(e.message || e).slice(0, 40), 'err'); return false; }
+}
+function renderSnapAdmin() {
+  const box = document.getElementById('snapList'); if (!box) return;
+  box.innerHTML = '';
+  if (!snapData.length) { box.innerHTML = '<div class="sans" style="font-size:12px;color:var(--muted)">（当前未启用拍立得，首屏用整屏大图）</div>'; return; }
+  snapData.forEach((s, i) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px';
+    const th = document.createElement('img');
+    th.src = s.img; th.style.cssText = 'width:56px;height:56px;object-fit:cover;border:1px solid var(--line)';
+    const cap = document.createElement('input');
+    cap.type = 'text'; cap.value = s.cap || ''; cap.maxLength = 40; cap.placeholder = '卡片说明（如 No.07 · Floral Tortoise）';
+    cap.style.cssText = 'flex:1;padding:6px 8px;border:1px solid var(--line);background:transparent;color:inherit;font-size:12px';
+    cap.onchange = () => { snapData[i].cap = cap.value.trim(); saveSnaps(snapData); };
+    const del = document.createElement('button');
+    del.type = 'button'; del.textContent = '删除';
+    del.style.cssText = 'padding:6px 12px;border:1px solid var(--line);background:transparent;color:inherit;font-size:12px;cursor:pointer';
+    del.onclick = () => { const l = snapData.filter((_, j) => j !== i); saveSnaps(l); };
+    row.append(th, cap, del); box.appendChild(row);
+  });
+}
+$('#snapAdd').onclick = async () => {
+  const fs = [...$('#snapFile').files];
+  if (!fs.length) { snapSt('请先选择图片', 'err'); return; }
+  const room = 4 - snapData.length;
+  if (room <= 0) { snapSt('最多 4 张，先删一张再加', 'err'); return; }
+  const btn = $('#snapAdd'); btn.disabled = true; snapSt('压缩上传中…');
+  try {
+    const add = [];
+    for (const f of fs.slice(0, room)) add.push({ img: await compressSnap(f), cap: '' });
+    await saveSnaps(snapData.concat(add));
+    $('#snapFile').value = '';
+  } catch (e) { snapSt('添加失败：' + String(e.message || e).slice(0, 40), 'err'); }
+  finally { btn.disabled = false; }
+};
+$('#snapClear').onclick = () => { if (snapData.length) saveSnaps([]); else snapSt('本来就是空的'); };
+
 async function load(){
   $('#loading').style.display='block'; $('#empty').style.display='none'; $('#error').style.display='none';
   try{
@@ -3367,6 +3491,7 @@ loadContent();
 // 访客也要应用自定义样式：样式是公开只读接口
 loadStyles();
 loadHero();
+loadSnaps();
 </script>
 </body>
 </html>
