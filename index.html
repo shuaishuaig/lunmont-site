@@ -77,6 +77,8 @@
   .card .cap{position:absolute;left:22px;right:22px;bottom:20px;color:#fff}
   .card .cap h3{font-size:18px;letter-spacing:.15em;font-weight:600}
   .card .cap p{font-size:13px;color:#e8e2d8;letter-spacing:.08em;margin-top:3px}
+  /* 仅图片展示开关(2026-11-26):body.hide-names 时产品卡隐藏名称/副标题/标签,只留图与价格 */
+  body.hide-names .card .cap h3,body.hide-names .card .cap p,body.hide-names .card .tags{display:none}
   /* ---- 变体（花色）条：一张卡 = 一个产品，卡内切换 SKU ---- */
   .card .vstrip{position:absolute;left:0;right:0;bottom:86px;display:flex;align-items:center;gap:8px;
     padding:0 20px;overflow-x:auto;scrollbar-width:none;z-index:2}
@@ -2767,6 +2769,8 @@ async function load(){
     // 服务端按 parent_sku 聚合成 cards；老后端（无 cards 字段）自动退回扁平行
     liveItems = (d.cards && d.cards.length) ? d.cards : (d.products||[]);
     flatItems = d.products || liveItems;
+    // 展示开关(2026-11-26):hide_names → 产品卡只留图片,隐藏名称/副标题文字
+    if (d.display) document.body.classList.toggle('hide-names', !!d.display.hideNames);
     // 记录本次渲染用的价格档：之后登录/登出若档位变化才会重拉。
     // 老后端不回 out.tier 时按零售处理（安全侧：宁可少显示批发价，绝不外漏）。
     lastTier = (d.tier === 'wholesale') ? 'wholesale' : 'retail';
